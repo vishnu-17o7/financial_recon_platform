@@ -1,0 +1,3 @@
+payment_date,settlement_date,customer_name,invoice_ref,payment_id,amount,currency,status
+2025-02-21,2025-02-22,Acme Pvt Ltd,INV-1001,PSP-9001,12500.00,INR,settled
+2025-02-21,2025-02-22,Beta Foods,INV-1002,PSP-9002,4000.00,INR,settled

@@ -1,0 +1,4 @@
+txn_date,value_date,description,amount,currency,reference,counterparty,dr_cr,account_code
+2025-02-21,2025-02-21,NEFT INV-1001 ACME PVT,12500.00,INR,UTR123,Acme Pvt Ltd,credit,BANK001
+2025-02-22,2025-02-22,BANK CHARGE FEB,250.00,INR,FEEFEB,,debit,BANK001
+2025-02-23,2025-02-23,RTGS SALARY RUN FEB,30000.00,INR,SALFEB,,debit,BANK001

@@ -1,0 +1,4 @@
+posting_date,narration,debit,credit,currency,voucher_no,account_code,counterparty
+2025-02-21,Customer receipt INV-1001,0,12500.00,INR,JV1001,BANK001,Acme Pvt Ltd
+2025-02-22,Bank charges expense,250.00,0,INR,JV1002,BANK001,
+2025-02-23,Salary payout run Feb,30000.00,0,INR,JV1003,BANK001,

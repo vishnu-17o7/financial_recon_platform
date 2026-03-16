@@ -10,7 +10,8 @@ Production-oriented reference implementation of a modular reconciliation platfor
 
 1. Docker Desktop (with Docker Compose V2) installed and running.
 2. Optional: Python 3.11 if you want to run outside Docker.
-3. Run all commands from the project root directory.
+3. Bun 1.2+ (for the React frontend).
+4. Run all commands from the project root directory.
 
 ## Environment setup
 
@@ -71,6 +72,14 @@ Expected response:
 {"status":"ok","app":"genai-recon"}
 ```
 
+1. Open web dashboard:
+
+```text
+http://localhost:8000
+```
+
+The dashboard at `http://localhost:8000` serves the built React app from `app/ui`.
+
 1. Open API docs:
 
 ```text
@@ -106,6 +115,63 @@ docker compose down
 ```powershell
 docker compose down -v
 docker compose up -d --build
+```
+
+## Run the React UI with Bun (development)
+
+1. Start backend API (Docker or local Python):
+
+```powershell
+docker compose up -d --build
+```
+
+1. In a new terminal, run frontend with Bun:
+
+```powershell
+cd frontend
+bun install
+bun run dev
+```
+
+1. Open the React dev UI:
+
+```text
+http://localhost:5173
+```
+
+The Vite dev server proxies API requests to `http://localhost:8000`.
+
+## Build React UI for FastAPI serving
+
+1. Build frontend assets into `app/ui`:
+
+```powershell
+cd frontend
+bun run build
+```
+
+1. Start backend and open:
+
+```text
+http://localhost:8000
+```
+
+## One-command startup script (PowerShell)
+
+Use the helper script to start Docker backend and Bun frontend together:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-fullstack.ps1
+```
+
+Common options:
+
+```powershell
+# Skip backend image rebuild
+powershell -ExecutionPolicy Bypass -File .\scripts\run-fullstack.ps1 -SkipBackendBuild
+
+# Stop backend containers automatically when frontend exits
+powershell -ExecutionPolicy Bypass -File .\scripts\run-fullstack.ps1 -StopBackendOnExit
 ```
 
 ## Run locally without Docker (optional)
@@ -180,3 +246,4 @@ The app now enables the extension at startup; if this came from an old DB state,
 
 - `LLMClient` and `EmbeddingClient` are provider-agnostic interfaces.
 - This repo includes deterministic fallbacks and mock clients for local development/testing.
+- React UI source is in `frontend/src` and is organized using reusable components under `frontend/src/components`.

@@ -1,3 +1,5 @@
+import json
+
 from app.llm.mock_clients import MockLLMClient
 
 
@@ -13,3 +15,36 @@ def test_mock_llm_exception_response_shape():
     out = client.complete_json("explain unreconciled exception")
     assert "explanation" in out
     assert "actions" in out
+
+
+def test_mock_llm_reconciliation_response_shape():
+    client = MockLLMClient()
+    prompt = json.dumps(
+        {
+            "task": "llm_reconciliation",
+            "left_transactions": [
+                {
+                    "id": "left-1",
+                    "transaction_date": "2025-02-21",
+                    "amount": "100.00",
+                    "currency": "INR",
+                    "reference": "ABC123",
+                    "counterparty": "acme",
+                }
+            ],
+            "right_transactions": [
+                {
+                    "id": "right-1",
+                    "transaction_date": "2025-02-21",
+                    "amount": "100.00",
+                    "currency": "INR",
+                    "reference": "ABC123",
+                    "counterparty": "acme",
+                }
+            ],
+        }
+    )
+    out = client.complete_json(prompt)
+    assert "matches" in out
+    assert "unmatched_left" in out
+    assert "unmatched_right" in out

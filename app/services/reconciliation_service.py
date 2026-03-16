@@ -7,21 +7,43 @@ from sqlalchemy.orm import Session
 from app.core.logging import get_logger
 from app.llm.interfaces import EmbeddingClient, LLMClient
 from app.llm.mock_clients import MockEmbeddingClient, MockLLMClient
+from app.llm.openrouter_client import OpenRouterClient
+from app.config.settings import get_settings
 from app.llm.prompt_builders import build_explanation_prompt
 from app.matching.engine import to_feature
 from app.matching.strategies.bank_gl_strategy import BankGLMatchingStrategy
 from app.matching.strategies.customer_ar_strategy import CustomerARMatchingStrategy
-from app.matching.strategies.generic_profile_strategy import GenericProfileMatchingStrategy
-from app.models.entities import AuditLog, Match, ReconciliationException, ReconciliationJob, TransactionNormalized
+from app.matching.strategies.generic_profile_strategy import (
+    GenericProfileMatchingStrategy,
+)
+from app.models.entities import (
+    AuditLog,
+    Match,
+    ReconciliationException,
+    ReconciliationJob,
+    TransactionNormalized,
+    TransactionRaw,
+)
 from app.models.enums import ExceptionStatus, JobStatus, MatchType, ScenarioType
 from app.schemas.common import JobCreateRequest
 
 logger = get_logger(__name__)
 
 
+def _get_llm_client() -> LLMClient:
+    settings = get_settings()
+    if settings.llm_provider == "OpenRouter":
+        return OpenRouterClient()
+    return MockLLMClient()
+
+
 class ReconciliationService:
-    def __init__(self, llm_client: LLMClient | None = None, embedding_client: EmbeddingClient | None = None):
-        self.llm_client = llm_client or MockLLMClient()
+    def __init__(
+        self,
+        llm_client: LLMClient | None = None,
+        embedding_client: EmbeddingClient | None = None,
+    ):
+        self.llm_client = llm_client or _get_llm_client()
         self.embedding_client = embedding_client or MockEmbeddingClient()
 
     @staticmethod
@@ -66,22 +88,30 @@ class ReconciliationService:
         db.commit()
 
         try:
-            txns = (
-                db.query(TransactionNormalized)
-                .filter(
-                    and_(
-                        TransactionNormalized.scenario_type == job.scenario_type,
-                        TransactionNormalized.transaction_date >= job.period_start,
-                        TransactionNormalized.transaction_date <= job.period_end,
-                    )
+            tx_query = db.query(TransactionNormalized).filter(
+                and_(
+                    TransactionNormalized.scenario_type == job.scenario_type,
+                    TransactionNormalized.transaction_date >= job.period_start,
+                    TransactionNormalized.transaction_date <= job.period_end,
                 )
-                .all()
             )
+
+            filters = job.filters_json if isinstance(job.filters_json, dict) else {}
+            ingestion_batch_id = filters.get("ingestion_batch_id")
+            if ingestion_batch_id:
+                tx_query = tx_query.join(
+                    TransactionRaw,
+                    TransactionRaw.id == TransactionNormalized.raw_transaction_id,
+                ).filter(TransactionRaw.ingestion_batch_id == ingestion_batch_id)
+
+            txns = tx_query.all()
             side_a = [to_feature(t) for t in txns if t.side == "A"]
             side_b = [to_feature(t) for t in txns if t.side == "B"]
 
             strategy = self._get_strategy(job.scenario_type)
-            matches, unmatched_a_ids = strategy.match(db, side_a, side_b, self.llm_client, self.embedding_client)
+            matches, unmatched_a_ids = strategy.match(
+                db, side_a, side_b, self.llm_client, self.embedding_client
+            )
 
             for m in matches:
                 db.add(
@@ -122,7 +152,9 @@ class ReconciliationService:
                 "side_a_count": total_a,
                 "side_b_count": len(side_b),
                 "matched_count": matched_count,
-                "matched_pct": round((matched_count / total_a) * 100, 2) if total_a else 0,
+                "matched_pct": round((matched_count / total_a) * 100, 2)
+                if total_a
+                else 0,
                 "exception_count": exception_count,
                 "reconciled_amount_delta_total": str(reconciled_amt),
             }
@@ -140,14 +172,18 @@ class ReconciliationService:
             )
             db.commit()
             db.refresh(job)
-            logger.info("Reconciliation job completed", extra={"extra_data": {"job_id": job.id}})
+            logger.info(
+                "Reconciliation job completed", extra={"extra_data": {"job_id": job.id}}
+            )
             return job
         except Exception as exc:
             job.status = JobStatus.FAILED
             job.error_message = str(exc)
             job.completed_at = datetime.utcnow()
             db.commit()
-            logger.exception("Reconciliation job failed", extra={"extra_data": {"job_id": job.id}})
+            logger.exception(
+                "Reconciliation job failed", extra={"extra_data": {"job_id": job.id}}
+            )
             raise
 
     def explain_match(self, db: Session, match_id: str) -> dict:
@@ -178,7 +214,11 @@ class ReconciliationService:
         return response
 
     def explain_exception(self, db: Session, exception_id: str) -> dict:
-        ex = db.query(ReconciliationException).filter(ReconciliationException.id == exception_id).first()
+        ex = (
+            db.query(ReconciliationException)
+            .filter(ReconciliationException.id == exception_id)
+            .first()
+        )
         if not ex:
             raise ValueError("exception not found")
         context = {
@@ -202,7 +242,9 @@ class ReconciliationService:
         db.commit()
         return response
 
-    def override_match(self, db: Session, match_id: str, auto_accepted: bool, reason: str, actor: str) -> Match:
+    def override_match(
+        self, db: Session, match_id: str, auto_accepted: bool, reason: str, actor: str
+    ) -> Match:
         match = db.query(Match).filter(Match.id == match_id).first()
         if not match:
             raise ValueError("match not found")
@@ -228,10 +270,47 @@ class ReconciliationService:
         if not job:
             raise ValueError("job not found")
         matches = db.query(Match).filter(Match.reconciliation_job_id == job_id).all()
-        exceptions = db.query(ReconciliationException).filter(ReconciliationException.reconciliation_job_id == job_id).all()
+        exceptions = (
+            db.query(ReconciliationException)
+            .filter(ReconciliationException.reconciliation_job_id == job_id)
+            .all()
+        )
+
+        transaction_ids = (
+            {m.transaction_a_id for m in matches}
+            | {m.transaction_b_id for m in matches}
+            | {e.transaction_id for e in exceptions}
+        )
+        txn_by_id: dict[str, TransactionNormalized] = {}
+        if transaction_ids:
+            txns = (
+                db.query(TransactionNormalized)
+                .filter(TransactionNormalized.id.in_(transaction_ids))
+                .all()
+            )
+            txn_by_id = {txn.id: txn for txn in txns}
+
+        def txn_summary(txn_id: str) -> dict | None:
+            txn = txn_by_id.get(txn_id)
+            if not txn:
+                return None
+            return {
+                "id": txn.id,
+                "side": txn.side,
+                "amount": str(txn.amount),
+                "currency": txn.currency,
+                "transaction_date": str(txn.transaction_date),
+                "reference": txn.reference_number,
+                "counterparty": txn.counterparty_normalized,
+                "description": txn.description_clean,
+            }
+
         by_reason = {
             r: c
-            for r, c in db.query(ReconciliationException.reason_code, func.count(ReconciliationException.id))
+            for r, c in db.query(
+                ReconciliationException.reason_code,
+                func.count(ReconciliationException.id),
+            )
             .filter(ReconciliationException.reconciliation_job_id == job_id)
             .group_by(ReconciliationException.reason_code)
             .all()
@@ -248,6 +327,12 @@ class ReconciliationService:
                     "confidence": str(m.confidence_score),
                     "algo": m.algorithm_used,
                     "auto_accepted": m.auto_accepted,
+                    "amount_delta": str(m.amount_delta)
+                    if m.amount_delta is not None
+                    else None,
+                    "date_delta_days": m.date_delta_days,
+                    "left": txn_summary(m.transaction_a_id),
+                    "right": txn_summary(m.transaction_b_id),
                 }
                 for m in matches
             ],
@@ -257,6 +342,9 @@ class ReconciliationService:
                     "txn": e.transaction_id,
                     "status": e.status.value,
                     "reason": e.reason_code,
+                    "reason_detail": e.reason_detail,
+                    "recommended_action": e.recommended_action,
+                    "transaction": txn_summary(e.transaction_id),
                 }
                 for e in exceptions
             ],

@@ -1,4 +1,7 @@
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routers.ingestion import router as ingestion_router
 from app.api.routers.reconciliation import router as reconciliation_router
@@ -24,3 +27,6 @@ def health() -> dict[str, str]:
 
 app.include_router(ingestion_router)
 app.include_router(reconciliation_router)
+
+ui_dir = Path(__file__).resolve().parents[1] / "ui"
+app.mount("/", StaticFiles(directory=str(ui_dir), html=True), name="ui")

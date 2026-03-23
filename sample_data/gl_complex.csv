@@ -1,0 +1,23 @@
+posting_date,narration,debit,credit,currency,voucher_no,account_code,counterparty
+2025-03-01,Customer receipt INV-2045,0,150000.00,INR,JV-3001,BANK001,Zenith Retail
+2025-03-01,Salary payout Mar payroll,98000.00,0,INR,JV-3002,BANK001,
+2025-03-02,Petty cash withdrawal,7000.00,0,INR,JV-3003,BANK001,
+2025-03-02,IMPS bank fee - March,35.00,0,INR,JV-3004,BANK001,
+2025-03-03,Savings interest income,0,112.55,INR,JV-3005,BANK001,
+2025-03-03,Receipt from Orbit Tech INV-7781,0,42500.00,INR,JV-3006,BANK001,Orbit Tech Pvt Ltd
+2025-03-04,GST payment challan March,18650.00,0,INR,JV-3007,BANK001,Government
+2025-03-04,Customer refund RMA-544,3000.00,0,INR,JV-3008,BANK001,Jane Doe
+2025-03-05,Card settlements batch 771,0,84560.00,INR,JV-3009,BANK001,Merchant Aggregator
+2025-03-05,Card chargeback CHB-008,1200.00,0,INR,JV-3010,BANK001,Card Network
+2025-03-06,Vendor payment LogiTrans,50750.00,0,INR,JV-3011,BANK001,LogiTrans LLP
+2025-03-06,Receipt Orbit Tech second tranche,0,42500.00,INR,JV-3012,BANK001,Orbit Tech Pvt Ltd
+2025-03-07,FX inward remittance,0,82990.00,INR,JV-3013,BANK001,Global Buyer Inc
+2025-03-08,Monthly bank maintenance fee,590.00,0,INR,JV-3014,BANK001,
+2025-03-09,Reversal of vendor payment UTR900333,0,50750.00,INR,JV-3015,BANK001,LogiTrans LLP
+2025-03-10,Manual suspense adjustment,9900.00,0,INR,JV-3016,BANK001,
+2025-03-11,UPI collection ORD-5501,0,1349.99,INR,JV-3017,BANK001,Rahul K
+2025-03-12,UPI collection ORD-5502,0,1349.99,INR,JV-3018,BANK001,Rahul K
+2025-03-12,USD wire fee,25.00,0,USD,JV-3019,BANK001,
+2025-03-15,Late posted bank fee,35.00,0,INR,JV-3020,BANK001,
+2025-03-01,Customer receipt INV-2045 rounding variance,0,150005.00,INR,JV-3021,BANK001,Zenith Retail
+2025-03-07,Unrelated manual journal,45000.00,0,INR,JV-3022,BANK001,Unknown Vendor

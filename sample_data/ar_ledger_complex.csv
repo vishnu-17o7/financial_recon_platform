@@ -1,0 +1,17 @@
+posting_date,narration,debit,credit,currency,voucher_no,account_code,counterparty
+2025-03-01,Invoice INV-9001 raised,12000.00,0,INR,AR-9001,AR001,Acme Retail
+2025-03-01,Invoice INV-9002 raised,8000.00,0,INR,AR-9002,AR001,Acme Retail
+2025-03-08,Invoice INV-9003 raised,4000.00,0,INR,AR-9003,AR001,Acme Retail
+2025-03-02,Invoice INV-9010-A split,10000.00,0,INR,AR-9010A,AR002,Beta Foods
+2025-03-02,Invoice INV-9010-B split,5000.00,0,INR,AR-9010B,AR002,Beta Foods
+2025-03-06,Invoice INV-9011 raised,7500.00,0,INR,AR-9011,AR002,Beta Foods
+2025-03-03,Invoice INV-9020 raised,5000.00,0,INR,AR-9020,AR003,Delta Labs
+2025-03-03,Invoice INV-9021 raised,5000.00,0,INR,AR-9021,AR003,Delta Labs
+2025-03-04,Invoice INV-9030 in EUR,3200.00,0,EUR,AR-9030,AR004,Euro Trade GmbH
+2025-03-04,Invoice INV-9040 raised,6700.00,0,INR,AR-9040,AR005,Gamma Stores
+2025-03-05,Invoice INV-9050 raised,20000.00,0,INR,AR-9050,AR006,Zenova LLC
+2025-03-07,Invoice INV-9060 raised,11111.11,0,INR,AR-9060,AR007,Omega Care
+2025-03-07,Invoice INV-9061 raised,22222.22,0,INR,AR-9061,AR007,Omega Care
+2025-03-06,Credit note for Beta Foods,0,500.00,INR,AR-CN-10,AR002,Beta Foods
+2025-03-12,Old invoice outside window,9000.00,0,INR,AR-OLD-1,AR009,Old Customer
+2025-03-02,Invoice INV-9001 duplicate booking,12000.00,0,INR,AR-9001-DUP,AR001,Acme Retail

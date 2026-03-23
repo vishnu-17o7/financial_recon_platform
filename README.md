@@ -267,20 +267,30 @@ http://localhost:8000
 
 ## One-command startup script (PowerShell)
 
-Use the helper script to start Docker backend and Bun frontend together:
+Use one script for both development modes (backend + frontend):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\run-fullstack.ps1
+# Mode 1 (default): Docker backend + Bun frontend
+powershell -ExecutionPolicy Bypass -File .\scripts\run-fullstack.ps1 -Mode docker
+
+# Mode 2: Local uvicorn backend + Bun frontend
+powershell -ExecutionPolicy Bypass -File .\scripts\run-fullstack.ps1 -Mode local
 ```
 
 Common options:
 
 ```powershell
-# Skip backend image rebuild
-powershell -ExecutionPolicy Bypass -File .\scripts\run-fullstack.ps1 -SkipBackendBuild
+# Docker mode: skip backend image rebuild
+powershell -ExecutionPolicy Bypass -File .\scripts\run-fullstack.ps1 -Mode docker -SkipBackendBuild
 
-# Stop backend containers automatically when frontend exits
-powershell -ExecutionPolicy Bypass -File .\scripts\run-fullstack.ps1 -StopBackendOnExit
+# Stop backend automatically when frontend exits (works for both modes)
+powershell -ExecutionPolicy Bypass -File .\scripts\run-fullstack.ps1 -Mode local -StopBackendOnExit
+
+# Local mode: customize DATABASE_URL override used for uvicorn process
+powershell -ExecutionPolicy Bypass -File .\scripts\run-fullstack.ps1 -Mode local -LocalDatabaseUrl "postgresql+psycopg://postgres:postgres@localhost:5432/recon_db"
+
+# Local mode: use DATABASE_URL from .env as-is (no override)
+powershell -ExecutionPolicy Bypass -File .\scripts\run-fullstack.ps1 -Mode local -UseEnvDatabaseUrl
 ```
 
 ## Run locally without Docker (optional)
@@ -321,6 +331,9 @@ $env:PYTHONPATH = "."
 ```powershell
 python -m uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
+
+Note:
+Use `app.api.main:app` as the uvicorn target module. `server:app` is not the backend entrypoint in this repository.
 
 1. Run tests:
 

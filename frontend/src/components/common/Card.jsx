@@ -1,4 +1,4 @@
-export default function Card({ className = "", children }) {
+export default function Card({ as: Element = "section", className = "", children, ...rest }) {
   const merged = className ? `card ${className}` : "card";
-  return <section className={merged}>{children}</section>;
+  return <Element className={merged} {...rest}>{children}</Element>;
 }

@@ -2,31 +2,79 @@ const JSON_HEADERS = {
   "Content-Type": "application/json"
 };
 
+const DEFAULT_TIMEOUT_MS = 45000;
+const RECONCILIATION_TIMEOUT_MS = 90000;
+
+function getRequestTimeout(path, timeoutMs) {
+  if (typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs > 0) {
+    return timeoutMs;
+  }
+
+  if (typeof path === "string" && path.includes("/ingestion/mapping/reconcile")) {
+    return RECONCILIATION_TIMEOUT_MS;
+  }
+
+  return DEFAULT_TIMEOUT_MS;
+}
+
+async function getErrorDetail(response) {
+  const fallback = `${response.status} ${response.statusText}`.trim();
+
+  try {
+    const payload = await response.json();
+    if (typeof payload?.detail === "string" && payload.detail.trim()) {
+      return payload.detail;
+    }
+    if (payload && typeof payload === "object") {
+      return JSON.stringify(payload);
+    }
+  } catch (_error) {
+    // Ignore JSON parse errors and try plain text payload.
+  }
+
+  try {
+    const text = await response.text();
+    if (typeof text === "string" && text.trim()) {
+      return text;
+    }
+  } catch (_error) {
+    // Ignore text parse errors and use fallback.
+  }
+
+  return fallback || "Request failed";
+}
+
 export async function apiRequest(path, options = {}) {
-  const response = await fetch(path, {
-    ...options,
-    headers:
-      options.body instanceof FormData
-        ? options.headers
-        : {
-            ...JSON_HEADERS,
-            ...(options.headers || {})
-          }
-  });
+  const controller = new AbortController();
+  const timeoutMs = getRequestTimeout(path, options.timeoutMs);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  if (!response.ok) {
-    let detail = `${response.status} ${response.statusText}`;
+  let response;
 
-    try {
-      const payload = await response.json();
-      detail = payload.detail || JSON.stringify(payload);
-    } catch (_error) {
-      const text = await response.text();
-      if (text) {
-        detail = text;
-      }
+  try {
+    response = await fetch(path, {
+      ...options,
+      signal: controller.signal,
+      headers:
+        options.body instanceof FormData
+          ? options.headers
+          : {
+              ...JSON_HEADERS,
+              ...(options.headers || {})
+            }
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s`);
     }
 
+    throw new Error("Unable to reach the server. Check your network connection and try again.");
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  if (!response.ok) {
+    const detail = await getErrorDetail(response);
     throw new Error(detail);
   }
 
@@ -34,7 +82,21 @@ export async function apiRequest(path, options = {}) {
     return null;
   }
 
-  return response.json();
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    return response.json();
+  }
+
+  const text = await response.text();
+  if (!text) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (_error) {
+    return text;
+  }
 }
 
 export function checkHealth() {

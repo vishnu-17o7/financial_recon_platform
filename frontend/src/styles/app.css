@@ -2029,13 +2029,18 @@ td.cell-ellipsis {
 
 .aa-page main > section {
   min-height: calc(100svh - var(--aa-nav-height) - clamp(1.2rem, 2.4vh, 2rem));
-  scroll-snap-align: start;
+  scroll-snap-align: center;
   scroll-snap-stop: always;
   border-radius: 18px;
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;
+  justify-content: center;
   padding-inline: clamp(1rem, 2.2vw, 2rem);
+}
+
+.aa-page main > section > * {
+  width: min(1140px, 100%);
+  margin-inline: auto;
 }
 
 .aa-skip-link {
@@ -2907,6 +2912,8 @@ td.cell-ellipsis {
 .aa-footer {
   border-top: 1px solid var(--brand-line);
   background: var(--brand-surface);
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
 }
 
 .aa-footer-inner {
@@ -3215,6 +3222,30 @@ td.cell-ellipsis {
   line-height: 1;
   letter-spacing: -0.02em;
   color: var(--text);
+}
+
+.archival-brand-link {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  line-height: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: color var(--motion-fast) var(--ease-out-quart);
+}
+
+.archival-brand-link:hover {
+  color: var(--accent-strong);
+}
+
+.archival-brand-link:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-radius: 6px;
 }
 
 .archival-brand-block p {

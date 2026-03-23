@@ -2,16 +2,30 @@ const JSON_HEADERS = {
   "Content-Type": "application/json"
 };
 
-const DEFAULT_TIMEOUT_MS = 45000;
-const RECONCILIATION_TIMEOUT_MS = 90000;
+const DEFAULT_TIMEOUT_MS = 60000;
+const MAPPING_SUGGEST_TIMEOUT_MS = 120000;
+const RECONCILIATION_TIMEOUT_MS = 180000;
+const JOB_RUN_TIMEOUT_MS = 180000;
 
 function getRequestTimeout(path, timeoutMs) {
   if (typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs > 0) {
     return timeoutMs;
   }
 
+  if (typeof path === "string" && path.includes("/ingestion/mapping/suggest")) {
+    return MAPPING_SUGGEST_TIMEOUT_MS;
+  }
+
   if (typeof path === "string" && path.includes("/ingestion/mapping/reconcile")) {
     return RECONCILIATION_TIMEOUT_MS;
+  }
+
+  if (
+    typeof path === "string" &&
+    path.includes("/reconciliation/jobs/") &&
+    path.endsWith("/run")
+  ) {
+    return JOB_RUN_TIMEOUT_MS;
   }
 
   return DEFAULT_TIMEOUT_MS;

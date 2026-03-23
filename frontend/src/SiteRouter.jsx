@@ -60,6 +60,18 @@ export default function SiteRouter() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const openLanding = () => {
+    const nextUrl = new URL(window.location.href);
+    if (nextUrl.pathname.toLowerCase() === "/dashboard") {
+      nextUrl.pathname = "/";
+    }
+    nextUrl.hash = "";
+    nextUrl.searchParams.delete("view");
+    window.history.pushState({}, "", `${nextUrl.pathname}${nextUrl.search}`);
+    setView(VIEW_LANDING);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   const loadingFallback = (
     <div className="route-loading" role="status" aria-live="polite">
       Loading workspace...
@@ -69,7 +81,11 @@ export default function SiteRouter() {
   return (
     <Suspense fallback={loadingFallback}>
       {view === VIEW_DASHBOARD ? (
-        <DashboardApp darkMode={darkMode} onToggleDarkMode={() => setDarkMode((value) => !value)} />
+        <DashboardApp
+          darkMode={darkMode}
+          onToggleDarkMode={() => setDarkMode((value) => !value)}
+          onNavigateHome={openLanding}
+        />
       ) : (
         <MarketingLanding
           onGetStarted={openDashboard}

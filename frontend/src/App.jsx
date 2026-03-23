@@ -323,7 +323,7 @@ function renderPreviewTable(section, tone, { t, formatNumber }) {
   );
 }
 
-export default function App({ darkMode = false, onToggleDarkMode = () => {} }) {
+export default function App({ darkMode = false, onToggleDarkMode = () => {}, onNavigateHome = () => {} }) {
   const [locale, setLocale] = useState(() => detectPreferredLocale());
   const [connection, setConnection] = useState({ ok: true, checking: true });
 
@@ -835,7 +835,17 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {} }) {
       <header className="header archival-header">
         <div className="header-left archival-header-left">
           <div className="header-title archival-brand-block">
-            <h1 className="archival-brand-title">The Archival Authority</h1>
+            <h1 className="archival-brand-title">
+              <button
+                type="button"
+                className="archival-brand-link"
+                onClick={onNavigateHome}
+                aria-label="Return to homepage"
+                title="Return to homepage"
+              >
+                The Archival Authority
+              </button>
+            </h1>
             <p>{t("AI-powered mapping and discrepancy review")}</p>
           </div>
 

@@ -96,6 +96,37 @@ class MockLLMClient(LLMClient):
 
     def complete_json(self, prompt: str) -> dict[str, Any]:
         prompt_l = prompt.lower()
+        if "bulk_enrichment" in prompt_l:
+            try:
+                payload = json.loads(prompt)
+                records = [
+                    item for item in payload.get("records", []) if isinstance(item, dict)
+                ]
+            except Exception:
+                records = []
+
+            enrichments: list[dict[str, Any]] = []
+            for item in records:
+                raw_id = str(item.get("raw_transaction_id") or "").strip()
+                counterparty = str(item.get("counterparty") or "").strip()
+                reference = str(item.get("reference") or "").strip()
+                invoice_ref = str(item.get("invoice_ref") or "").strip()
+                references = [v for v in [reference, invoice_ref] if v]
+
+                enrichments.append(
+                    {
+                        "raw_transaction_id": raw_id,
+                        "normalized_name": counterparty.lower() if counterparty else None,
+                        "transaction_type": "other",
+                        "reference_numbers": references,
+                    }
+                )
+
+            return {
+                "enrichments": enrichments,
+                "model": "mock-bulk-enrichment",
+            }
+
         if "column_mapping_suggestion" in prompt_l:
             try:
                 payload = json.loads(prompt)

@@ -4,10 +4,38 @@ from typing import Any
 
 def build_enrichment_prompt(record: dict[str, Any]) -> str:
     return (
-        "You are a financial data normalizer. Return JSON only with keys: "
-        "normalized_name, transaction_type, reference_numbers.\n"
+        "You are a strict financial data normalizer. "
+        "Return JSON object only with keys: normalized_name, transaction_type, reference_numbers. "
+        "Keep values concise and deterministic.\n"
         f"Record: {json.dumps(record, default=str)}"
     )
+
+
+def build_bulk_enrichment_prompt(records: list[dict[str, Any]]) -> str:
+    payload = {
+        "task": "bulk_enrichment",
+        "objective": (
+            "Normalize financial transaction text fields in batches. "
+            "For each input record, return normalized_name, transaction_type, and reference_numbers."
+        ),
+        "records": records,
+        "output_contract": {
+            "enrichments": [
+                {
+                    "raw_transaction_id": "string - copied from input record",
+                    "normalized_name": "string or null",
+                    "transaction_type": "string or null",
+                    "reference_numbers": ["list of string references"],
+                }
+            ]
+        },
+        "instruction": (
+            "Return JSON object only. Do not include markdown. "
+            "Include every record from input exactly once in enrichments. "
+            "Keep each field value concise."
+        ),
+    }
+    return json.dumps(payload, default=str)
 
 
 def build_tiebreak_prompt(
@@ -48,7 +76,7 @@ def build_column_mapping_prompt(
             "description": "Free-form text describing the transaction (narration, memo, remarks)",
             "amount": "The total transaction amount (may be signed or unsigned)",
             "debit": "The debit/withdrawal amount (positive for debits)",
-            "debit": "The credit/deposit amount (positive for credits)",
+            "credit": "The credit/deposit amount (positive for credits)",
             "currency": "The currency code (INR, USD, EUR, etc.)",
             "reference": "Unique identifier for the transaction (UTR, voucher number, payment ID)",
             "counterparty": "The other party in the transaction (vendor, customer, beneficiary name)",
@@ -59,6 +87,7 @@ def build_column_mapping_prompt(
             "Look for exact or close matches in column names (e.g., 'Transaction Date' = 'txn_date' = 'posting_date')",
             "Check the data values in preview rows to confirm your mapping is correct",
             "If a column name doesn't match but the data pattern does (e.g., dates, amounts), use that as evidence",
+            "If a side has separate debit and credit columns, map debit and credit and avoid amount on that side",
             "Set confidence based on how certain you are: 0.9+ for clear matches, 0.6-0.9 for probable, 0.3-0.6 for uncertain, <0.3 for unlikely",
             "Provide a brief rationale explaining WHY you chose this mapping",
         ],
@@ -197,7 +226,9 @@ def build_column_mapping_prompt(
             "The output must have a top-level key 'mappings' containing an array of mapping objects. "
             "For each supported field, include: field, left_column, right_column, confidence (0-1), and rationale. "
             "If no suitable column is found for a field, set the column to null. "
-            "Use confidence to indicate certainty: 0.9+ = very sure, 0.7-0.9 = probable, 0.5-0.7 = uncertain, <0.5 = unlikely match."
+            "When debit/credit columns exist for a side, prefer mapping debit and credit and leave amount null on that side. "
+            "Use confidence to indicate certainty: 0.9+ = very sure, 0.7-0.9 = probable, 0.5-0.7 = uncertain, <0.5 = unlikely match. "
+            "Be strict and concise: rationale must be one short sentence (max 12 words)."
         ),
     }
     return json.dumps(payload, default=str)
@@ -418,7 +449,9 @@ def build_llm_reconciliation_prompt(
             "Each match must reference valid transaction IDs from the input. "
             "Each unmatched transaction must be listed with a clear reason. "
             "Prioritize accuracy over coverage - it's better to leave unmatched than to force incorrect matches. "
-            "Remember: ONE-TO-ONE matching only - never match a transaction that is already in another pair."
+            "Remember: ONE-TO-ONE matching only - never match a transaction that is already in another pair. "
+            "Be strict and concise: keep reason text short and concrete. "
+            "For ties, choose deterministically by the lexicographically smallest right_transaction_id."
         ),
     }
     return json.dumps(payload, default=str)

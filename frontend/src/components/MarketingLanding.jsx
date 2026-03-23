@@ -119,7 +119,7 @@ export default function MarketingLanding({ onGetStarted, darkMode = false, onTog
               The Archival Authority
             </a>
             <div className="aa-nav-links" aria-label="Homepage sections">
-              <a href="#why-us">Why us</a>
+              <a href="#why-us">Why Teams Switch</a>
               <a href="#workflow">Workflow</a>
               <a href="#trust">Trust</a>
             </div>
@@ -217,7 +217,7 @@ export default function MarketingLanding({ onGetStarted, darkMode = false, onTog
 
               <div className="aa-cycle-card">
                 <div className="aa-cycle-head">
-                  <p>Close-cycle time</p>
+                  <p>Cycle-close time</p>
                   <span className="material-symbols-outlined" aria-hidden="true">
                     timer
                   </span>

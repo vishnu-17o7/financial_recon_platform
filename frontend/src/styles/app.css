@@ -69,13 +69,13 @@
   --overlay-bg: rgba(36, 29, 21, 0.5);
   --modal-shadow: 0 25px 50px -12px rgba(36, 29, 21, 0.35);
   --toast-bg: #2f251b;
-  --on-accent: #ffffff;
+  --on-accent: #fffaf2;
   --logo-inset: rgba(255, 255, 255, 0.3);
   --merge-card-inset: rgba(255, 255, 255, 0.84);
   --merge-manual-inset: rgba(246, 235, 216, 1);
   --processing-spinner-track: rgba(95, 133, 113, 0.28);
   --spinner-border: rgba(255, 255, 255, 0.35);
-  --spinner-top: #ffffff;
+  --spinner-top: #fffaf2;
   --log-info-bg: rgba(95, 133, 113, 0.1);
   --log-success-bg: rgba(79, 127, 102, 0.1);
   --log-warning-bg: rgba(154, 110, 58, 0.12);
@@ -106,6 +106,16 @@
   --brand-alert: #9b594d;
   --brand-shell-shadow: 0 14px 34px rgba(36, 29, 21, 0.12);
   --brand-shell-shadow-strong: 0 20px 44px rgba(36, 29, 21, 0.18);
+  --font-sans: "IBM Plex Sans", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-serif: "Newsreader", Georgia, serif;
+  --font-mono: "IBM Plex Mono", "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  --text-caption: 0.75rem;
+  --text-secondary: 0.875rem;
+  --text-body: 1rem;
+  --line-body: 1.62;
+  --line-relaxed: 1.72;
+  --tracking-caps: 0.12em;
+  --tracking-caps-wide: 0.18em;
 }
 
 [data-theme="dark"] {
@@ -185,7 +195,7 @@
   --merge-manual-inset: rgba(214, 176, 123, 0.14);
   --processing-spinner-track: rgba(123, 163, 143, 0.34);
   --spinner-border: rgba(255, 255, 255, 0.3);
-  --spinner-top: #ffffff;
+  --spinner-top: #f7f2eb;
   --log-info-bg: rgba(123, 163, 143, 0.2);
   --log-success-bg: rgba(138, 184, 159, 0.18);
   --log-warning-bg: rgba(214, 176, 123, 0.18);
@@ -206,6 +216,8 @@
   --brand-alert: #d79b8f;
   --brand-shell-shadow: 0 16px 36px rgba(0, 0, 0, 0.4);
   --brand-shell-shadow-strong: 0 22px 48px rgba(0, 0, 0, 0.54);
+  --line-body: 1.68;
+  --line-relaxed: 1.76;
 }
 
 * {
@@ -222,8 +234,11 @@ body,
 body {
   margin: 0;
   color: var(--text);
-  font-family: "Inter", "Segoe UI", sans-serif;
-  line-height: 1.55;
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: var(--line-body);
+  font-kerning: normal;
+  text-rendering: optimizeLegibility;
   background: var(--bg);
   overflow-x: hidden;
 }
@@ -231,9 +246,17 @@ body {
 h1,
 h2,
 h3,
-h4,
+h4 {
+  margin: 0;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
 p {
   margin: 0;
+  line-height: var(--line-body);
+  text-wrap: pretty;
 }
 
 input,
@@ -250,10 +273,33 @@ button:focus-visible {
   box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
+a:focus-visible,
+.aa-btn:focus-visible,
+.archival-side-link:focus-visible,
+.archival-top-link:focus-visible,
+.stage-btn:focus-visible,
+.logs-btn:focus-visible,
+.theme-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
 .app-container {
   width: min(1280px, calc(100% - 2rem));
   margin: 0 auto;
   padding: 1rem 0 2rem;
+}
+
+.route-loading {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: var(--text-secondary);
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
 }
 
 .header {
@@ -295,7 +341,7 @@ button:focus-visible {
 }
 
 .locale-select span {
-  font-size: 0.72rem;
+  font-size: var(--text-caption);
   font-weight: 700;
 }
 
@@ -318,7 +364,7 @@ button:focus-visible {
   border-radius: 9px;
   background: var(--surface);
   color: var(--text);
-  font-size: 0.75rem;
+  font-size: var(--text-caption);
   font-weight: 600;
   cursor: pointer;
   transition:
@@ -346,7 +392,7 @@ button:focus-visible {
   border-radius: 9px;
   background: var(--surface);
   color: var(--text);
-  font-size: 0.75rem;
+  font-size: var(--text-caption);
   font-weight: 700;
   cursor: pointer;
   transition:
@@ -397,14 +443,14 @@ button:focus-visible {
 }
 
 .header-title p {
-  font-size: 0.82rem;
+  font-size: var(--text-secondary);
   color: var(--text-muted);
 }
 
 .health-pill {
   border-radius: 999px;
   padding: 0.5rem 0.8rem;
-  font-size: 0.75rem;
+  font-size: var(--text-caption);
   font-weight: 700;
   display: inline-flex;
   align-items: center;
@@ -832,6 +878,17 @@ button:focus-visible {
   box-shadow: none;
 }
 
+.logs-btn:disabled,
+.theme-toggle:disabled,
+.archival-top-link:disabled,
+.stage-btn:disabled,
+.aa-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
 .btn-primary {
   background: var(--accent);
   color: var(--on-accent);
@@ -952,7 +1009,8 @@ button:focus-visible {
 }
 
 .file-preview-table td {
-  font-family: "IBM Plex Mono", "Consolas", monospace;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   color: var(--text-table);
 }
 
@@ -1034,7 +1092,7 @@ button:focus-visible {
 }
 
 .merge-field-meta code {
-  font-family: "IBM Plex Mono", "Consolas", monospace;
+  font-family: var(--font-mono);
   font-size: 0.69rem;
   border-radius: 6px;
   border: 1px solid var(--line);
@@ -1089,7 +1147,7 @@ button:focus-visible {
 }
 
 .conflict-marker {
-  font-family: "IBM Plex Mono", "Consolas", monospace;
+  font-family: var(--font-mono);
   font-size: 0.67rem;
   letter-spacing: 0.01em;
   padding: 0.42rem 0.75rem;
@@ -1162,6 +1220,7 @@ button:focus-visible {
 .confidence-text {
   font-size: 0.68rem;
   font-weight: 800;
+  font-variant-numeric: tabular-nums;
   color: var(--text-soft);
 }
 
@@ -1221,7 +1280,7 @@ button:focus-visible {
   color: var(--text-muted);
   font-size: 0.67rem;
   font-weight: 700;
-  letter-spacing: 0.03em;
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
 }
 
@@ -1229,6 +1288,7 @@ button:focus-visible {
   margin-top: 0.1rem;
   font-size: 1.22rem;
   font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 
 .metric-card-value.success {
@@ -1417,7 +1477,7 @@ td.cell-ellipsis {
 }
 
 .diff-list li button span {
-  font-family: "IBM Plex Mono", "Consolas", monospace;
+  font-family: var(--font-mono);
   font-size: 0.7rem;
   font-weight: 700;
 }
@@ -1484,7 +1544,7 @@ td.cell-ellipsis {
   padding: 0.62rem;
   font-size: 0.69rem;
   line-height: 1.45;
-  font-family: "IBM Plex Mono", "Consolas", monospace;
+  font-family: var(--font-mono);
   background: var(--surface-solid);
 }
 
@@ -1639,7 +1699,7 @@ td.cell-ellipsis {
   padding: 0.5rem 0.6rem;
   border-radius: 6px;
   font-size: 0.78rem;
-  font-family: "JetBrains Mono", monospace;
+  font-family: var(--font-mono);
   margin-bottom: 4px;
   animation: log-enter var(--motion-medium) var(--ease-out-quart) both;
   transition: background-color var(--motion-fast) var(--ease-out-quart);
@@ -1943,9 +2003,15 @@ td.cell-ellipsis {
 }
 
 .aa-page {
+  --aa-nav-height: 82px;
   min-height: 100vh;
+  height: 100svh;
   color: var(--brand-text);
   background: var(--brand-canvas);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scroll-snap-type: y mandatory;
+  scroll-padding-top: calc(var(--aa-nav-height) + 0.35rem);
 }
 
 .aa-page main,
@@ -1953,6 +2019,23 @@ td.cell-ellipsis {
 .aa-footer-inner {
   width: min(1280px, calc(100% - 2rem));
   margin: 0 auto;
+}
+
+.aa-page main {
+  display: grid;
+  gap: clamp(0.9rem, 1.5vw, 1.35rem);
+  padding-block: clamp(0.8rem, 1.8vh, 1.3rem) clamp(1rem, 2.4vh, 1.6rem);
+}
+
+.aa-page main > section {
+  min-height: calc(100svh - var(--aa-nav-height) - clamp(1.2rem, 2.4vh, 2rem));
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding-inline: clamp(1rem, 2.2vw, 2rem);
 }
 
 .aa-skip-link {
@@ -2006,7 +2089,7 @@ td.cell-ellipsis {
 .aa-brand {
   color: var(--brand-text);
   text-decoration: none;
-  font-family: "Newsreader", Georgia, serif;
+  font-family: var(--font-serif);
   font-style: italic;
   font-size: 1.8rem;
   line-height: 1;
@@ -2024,7 +2107,7 @@ td.cell-ellipsis {
   text-decoration: none;
   font-size: 0.73rem;
   font-weight: 700;
-  letter-spacing: 0.16em;
+  letter-spacing: var(--tracking-caps-wide);
   text-transform: uppercase;
   transition: color var(--motion-medium) var(--ease-out-quart);
 }
@@ -2043,9 +2126,9 @@ td.cell-ellipsis {
   justify-content: center;
   text-decoration: none;
   cursor: pointer;
-  font-size: 0.72rem;
+  font-size: var(--text-caption);
   font-weight: 800;
-  letter-spacing: 0.14em;
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
   transition:
     transform var(--motion-fast) var(--ease-out-quart),
@@ -2057,6 +2140,10 @@ td.cell-ellipsis {
 
 .aa-btn:active {
   transform: scale(var(--press-scale));
+}
+
+.aa-btn:disabled {
+  pointer-events: none;
 }
 
 .aa-btn-solid {
@@ -2139,9 +2226,9 @@ td.cell-ellipsis {
   background: var(--brand-accent-soft);
   color: var(--brand-alert);
   padding: 0.38rem 0.58rem;
-  font-size: 0.66rem;
+  font-size: 0.68rem;
   font-weight: 800;
-  letter-spacing: 0.14em;
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
 }
 
@@ -2150,7 +2237,7 @@ td.cell-ellipsis {
 .aa-workflow-section h2,
 .aa-trust-copy h2,
 .aa-final-inner h2 {
-  font-family: "Newsreader", Georgia, serif;
+  font-family: var(--font-serif);
   font-style: italic;
   letter-spacing: -0.02em;
 }
@@ -2166,6 +2253,7 @@ td.cell-ellipsis {
   max-width: 64ch;
   color: var(--brand-text-muted);
   font-size: 1.08rem;
+  line-height: var(--line-relaxed);
 }
 
 .aa-action-row {
@@ -2191,7 +2279,7 @@ td.cell-ellipsis {
   font-size: 0.67rem;
   font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--tracking-caps);
 }
 
 .aa-proof-item span.material-symbols-outlined {
@@ -2215,7 +2303,7 @@ td.cell-ellipsis {
 }
 
 .aa-panel-head h3 {
-  font-family: "Newsreader", Georgia, serif;
+  font-family: var(--font-serif);
   font-style: italic;
   font-size: 1.66rem;
   font-weight: 600;
@@ -2238,7 +2326,7 @@ td.cell-ellipsis {
 
 .aa-panel-summary p {
   font-size: 0.65rem;
-  letter-spacing: 0.1em;
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
   color: var(--brand-text-muted);
   font-weight: 700;
@@ -2246,10 +2334,11 @@ td.cell-ellipsis {
 
 .aa-panel-summary h4 {
   margin-top: 0.22rem;
-  font-family: "Newsreader", Georgia, serif;
+  font-family: var(--font-serif);
   font-style: italic;
   font-size: 1.95rem;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .aa-panel-summary-time {
@@ -2278,7 +2367,7 @@ td.cell-ellipsis {
 
 .aa-stat-grid p {
   font-size: 0.62rem;
-  letter-spacing: 0.1em;
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
   color: var(--brand-text-muted);
   font-weight: 700;
@@ -2286,9 +2375,10 @@ td.cell-ellipsis {
 
 .aa-stat-grid h4 {
   margin-top: 0.28rem;
-  font-family: "Newsreader", Georgia, serif;
+  font-family: var(--font-serif);
   font-size: 2.05rem;
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
 .aa-stat-grid small {
@@ -2316,7 +2406,7 @@ td.cell-ellipsis {
 .aa-cycle-head p {
   font-size: 0.62rem;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--tracking-caps);
   opacity: 0.84;
 }
 
@@ -2328,15 +2418,16 @@ td.cell-ellipsis {
 }
 
 .aa-cycle-value strong {
-  font-family: "Newsreader", Georgia, serif;
+  font-family: var(--font-serif);
   font-size: 3rem;
   font-style: italic;
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
 .aa-cycle-value span {
   font-size: 0.62rem;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
   opacity: 0.84;
 }
@@ -2347,7 +2438,7 @@ td.cell-ellipsis {
 
 .aa-timeline-feed > p {
   font-size: 0.62rem;
-  letter-spacing: 0.13em;
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
   color: var(--brand-text-muted);
   font-weight: 800;
@@ -2387,9 +2478,9 @@ td.cell-ellipsis {
 }
 
 .aa-switch-section {
-  border-top: 1px solid var(--brand-line);
-  border-bottom: 1px solid var(--brand-line);
+  border: 1px solid var(--brand-line);
   background: var(--brand-surface);
+  box-shadow: var(--brand-shell-shadow);
   padding-top: 3.8rem;
   padding-bottom: 3.8rem;
 }
@@ -2415,11 +2506,18 @@ td.cell-ellipsis {
 }
 
 .aa-section-label {
+  display: inline-flex;
+  align-items: center;
   font-size: 0.67rem;
   font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.22em;
+  letter-spacing: var(--tracking-caps-wide);
   color: var(--brand-accent);
+  background: var(--brand-accent-soft);
+  border: 1px solid var(--brand-line);
+  border-radius: 999px;
+  padding: 0.44rem 0.76rem;
+  line-height: 1;
   white-space: nowrap;
 }
 
@@ -2444,7 +2542,7 @@ td.cell-ellipsis {
 
 .aa-switch-card h3 {
   margin-top: 0.66rem;
-  font-family: "Newsreader", Georgia, serif;
+  font-family: var(--font-serif);
   font-style: italic;
   font-size: 2.05rem;
   line-height: 1.02;
@@ -2454,6 +2552,7 @@ td.cell-ellipsis {
   margin-top: 0.45rem;
   color: var(--brand-text-muted);
   font-size: 0.9rem;
+  line-height: var(--line-body);
 }
 
 .aa-workflow-section {
@@ -2482,7 +2581,7 @@ td.cell-ellipsis {
   display: inline-block;
   font-size: 0.64rem;
   font-weight: 800;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
   color: var(--brand-accent);
 }
@@ -2511,7 +2610,7 @@ td.cell-ellipsis {
   font-size: 0.66rem;
   font-weight: 700;
   color: var(--brand-text-muted);
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
 }
 
@@ -2527,7 +2626,7 @@ td.cell-ellipsis {
 
 .aa-workflow-card h3 {
   margin-top: 0.82rem;
-  font-family: "Newsreader", Georgia, serif;
+  font-family: var(--font-serif);
   font-style: italic;
   font-size: 1.72rem;
 }
@@ -2536,6 +2635,7 @@ td.cell-ellipsis {
   margin-top: 0.42rem;
   color: var(--brand-text-muted);
   font-size: 0.84rem;
+  line-height: var(--line-body);
 }
 
 .aa-trust-section {
@@ -2574,7 +2674,7 @@ td.cell-ellipsis {
 }
 
 .aa-trust-list h3 {
-  font-family: "Newsreader", Georgia, serif;
+  font-family: var(--font-serif);
   font-style: italic;
   font-size: 1.55rem;
   line-height: 1.08;
@@ -2583,6 +2683,8 @@ td.cell-ellipsis {
 .aa-trust-list p {
   margin-top: 0.28rem;
   font-size: 0.85rem;
+  line-height: var(--line-body);
+  max-width: 54ch;
   color: rgba(255, 253, 248, 0.8);
 }
 
@@ -2627,7 +2729,7 @@ td.cell-ellipsis {
 
 .aa-preview-title-wrap p {
   font-size: 0.62rem;
-  letter-spacing: 0.1em;
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
   font-weight: 700;
   color: var(--brand-text-muted);
@@ -2635,7 +2737,7 @@ td.cell-ellipsis {
 
 .aa-preview-title-wrap h3 {
   margin-top: 0.1rem;
-  font-family: "Newsreader", Georgia, serif;
+  font-family: var(--font-serif);
   font-style: italic;
   font-size: 1.03rem;
 }
@@ -2644,9 +2746,9 @@ td.cell-ellipsis {
   border-radius: 8px;
   background: var(--brand-accent-soft);
   color: var(--brand-alert);
-  font-size: 0.56rem;
+  font-size: 0.625rem;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
   padding: 0.28rem 0.42rem;
 }
@@ -2655,9 +2757,9 @@ td.cell-ellipsis {
   margin-top: 0.76rem;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  font-size: 0.56rem;
+  font-size: 0.625rem;
   font-weight: 800;
-  letter-spacing: 0.1em;
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
   color: var(--brand-text-muted);
 }
@@ -2692,7 +2794,7 @@ td.cell-ellipsis {
   align-items: center;
   justify-content: flex-end;
   gap: 0.28rem;
-  font-size: 0.6rem;
+  font-size: 0.625rem;
   font-weight: 800;
 }
 
@@ -2738,17 +2840,18 @@ td.cell-ellipsis {
 }
 
 .aa-preview-metrics p {
-  font-size: 0.53rem;
+  font-size: 0.625rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
   color: var(--brand-text-muted);
 }
 
 .aa-preview-metrics h4 {
   margin-top: 0.08rem;
-  font-family: "Newsreader", Georgia, serif;
+  font-family: var(--font-serif);
   font-size: 1.3rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .aa-flagged {
@@ -2772,7 +2875,7 @@ td.cell-ellipsis {
   margin: 0 auto;
   border-radius: 12px;
   background: var(--brand-accent);
-  color: #ffffff;
+  color: var(--on-accent);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2791,6 +2894,9 @@ td.cell-ellipsis {
 .aa-final-inner p {
   margin-top: 0.85rem;
   font-size: 1.1rem;
+  line-height: var(--line-relaxed);
+  max-width: 62ch;
+  margin-inline: auto;
   color: var(--brand-text-muted);
 }
 
@@ -2817,7 +2923,7 @@ td.cell-ellipsis {
 }
 
 .aa-footer-brand span {
-  font-family: "Newsreader", Georgia, serif;
+  font-family: var(--font-serif);
   font-style: italic;
   font-size: 1.4rem;
 }
@@ -2839,7 +2945,7 @@ td.cell-ellipsis {
   text-decoration: underline;
   text-underline-offset: 0.16em;
   font-size: 0.73rem;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
   transition: color var(--motion-medium) var(--ease-out-quart);
 }
@@ -2864,10 +2970,22 @@ td.cell-ellipsis {
 }
 
 @media (max-width: 860px) {
+  .aa-page {
+    --aa-nav-height: 132px;
+  }
+
   .aa-page main,
   .aa-top-nav-inner,
   .aa-footer-inner {
     width: calc(100% - 1rem);
+  }
+
+  .aa-page {
+    scroll-snap-type: y proximity;
+  }
+
+  .aa-page main > section {
+    min-height: calc(100svh - var(--aa-nav-height) - 1rem);
   }
 
   .aa-top-nav-inner {
@@ -2921,6 +3039,14 @@ td.cell-ellipsis {
 }
 
 @media (max-width: 620px) {
+  .aa-page {
+    --aa-nav-height: 150px;
+  }
+
+  .aa-page main > section {
+    border-radius: 14px;
+  }
+
   .aa-brand {
     font-size: 1.42rem;
   }
@@ -2960,6 +3086,16 @@ td.cell-ellipsis {
   .aa-preview-status {
     justify-content: flex-start;
     text-align: left;
+  }
+
+  .aa-btn,
+  .btn,
+  .logs-btn,
+  .theme-toggle,
+  .stage-btn,
+  .archival-top-link,
+  .archival-side-link {
+    min-height: 44px;
   }
 }
 
@@ -3073,7 +3209,7 @@ td.cell-ellipsis {
 }
 
 .archival-brand-title {
-  font-family: "Newsreader", Georgia, serif;
+  font-family: var(--font-serif);
   font-size: clamp(1.45rem, 2vw, 1.9rem);
   font-style: italic;
   line-height: 1;
@@ -3083,8 +3219,8 @@ td.cell-ellipsis {
 
 .archival-brand-block p {
   text-transform: uppercase;
-  letter-spacing: 0.14em;
-  font-size: 0.6rem;
+  letter-spacing: var(--tracking-caps);
+  font-size: 0.64rem;
   color: var(--text-muted);
   margin-top: 0.25rem;
   font-weight: 700;
@@ -3173,7 +3309,7 @@ td.cell-ellipsis {
 
 .archival-sidebar-title-wrap h2 {
   font-size: 1.14rem;
-  font-family: "Newsreader", Georgia, serif;
+  font-family: var(--font-serif);
   font-style: italic;
   font-weight: 600;
 }
@@ -3183,7 +3319,7 @@ td.cell-ellipsis {
   display: inline-flex;
   font-size: 0.62rem;
   font-weight: 800;
-  letter-spacing: 0.09em;
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
   border-radius: 999px;
   border: 1px solid var(--line-strong);
@@ -3196,7 +3332,7 @@ td.cell-ellipsis {
   margin: 0;
   font-size: 0.65rem;
   text-transform: uppercase;
-  letter-spacing: 0.14em;
+  letter-spacing: var(--tracking-caps);
   color: var(--text-muted);
   font-weight: 800;
   padding: 0.25rem 0.35rem;
@@ -3308,16 +3444,16 @@ td.cell-ellipsis {
 }
 
 .arch-stage-copy small {
-  font-size: 0.55rem;
+  font-size: 0.625rem;
   font-weight: 800;
-  letter-spacing: 0.11em;
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
   color: var(--text-muted);
 }
 
 .arch-stage-copy strong {
   font-size: 0.86rem;
-  font-family: "Newsreader", Georgia, serif;
+  font-family: var(--font-serif);
   font-style: italic;
   font-weight: 600;
   color: var(--text-soft);
@@ -3362,16 +3498,16 @@ td.cell-ellipsis {
 }
 
 .arch-onboard-kicker {
-  font-size: 0.58rem;
+  font-size: 0.64rem;
   text-transform: uppercase;
-  letter-spacing: 0.11em;
+  letter-spacing: var(--tracking-caps);
   font-weight: 800;
   color: var(--accent-strong);
 }
 
 .arch-onboard-copy h3 {
   margin-top: 0.24rem;
-  font-family: "Newsreader", Georgia, serif;
+  font-family: var(--font-serif);
   font-style: italic;
   font-size: 1.14rem;
 }
@@ -3379,7 +3515,9 @@ td.cell-ellipsis {
 .arch-onboard-copy p {
   margin-top: 0.18rem;
   color: var(--text-muted);
-  font-size: 0.81rem;
+  font-size: var(--text-secondary);
+  line-height: var(--line-body);
+  max-width: 64ch;
 }
 
 .arch-onboard-actions {
@@ -3422,7 +3560,7 @@ td.cell-ellipsis {
 }
 
 .archival-dashboard .card-title h2 {
-  font-family: "Newsreader", Georgia, serif;
+  font-family: var(--font-serif);
   font-size: 1.38rem;
   font-style: italic;
   font-weight: 600;
@@ -3465,8 +3603,8 @@ td.cell-ellipsis {
 }
 
 .arch-upload-meta h4 {
-  font-size: 0.56rem;
-  letter-spacing: 0.1em;
+  font-size: 0.64rem;
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
   color: var(--accent-strong);
   font-weight: 800;
@@ -3474,9 +3612,10 @@ td.cell-ellipsis {
 
 .arch-upload-meta p {
   margin-top: 0.2rem;
-  font-family: "Newsreader", Georgia, serif;
+  font-family: var(--font-serif);
   font-style: italic;
   font-size: 1.22rem;
+  font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 
@@ -3494,7 +3633,7 @@ td.cell-ellipsis {
 .archival-dashboard .table-header h3,
 .archival-dashboard .diff-list-header h3,
 .archival-dashboard .diff-detail-header h3 {
-  font-family: "Newsreader", Georgia, serif;
+  font-family: var(--font-serif);
   font-style: italic;
   font-weight: 600;
 }
@@ -3573,6 +3712,26 @@ td.cell-ellipsis {
     justify-content: flex-start;
   }
 
+  .archival-header-right .logs-btn,
+  .archival-header-right .theme-toggle,
+  .archival-header-right .locale-select,
+  .archival-side-link,
+  .archival-top-link,
+  .arch-stage-btn,
+  .btn,
+  .aa-btn {
+    min-height: 44px;
+  }
+
+  .form-group label,
+  .arch-onboard-kicker,
+  .arch-upload-meta h4,
+  .aa-nav-links a,
+  .aa-footer-links a {
+    font-size: 0.875rem;
+    letter-spacing: 0.08em;
+  }
+
   .archival-dashboard .upload-grid,
   .archival-dashboard .file-upload-area {
     grid-template-columns: 1fr;
@@ -3610,3 +3769,4 @@ td.cell-ellipsis {
     transform: none !important;
   }
 }
+

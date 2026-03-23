@@ -6,6 +6,115 @@ Production-oriented reference implementation of a modular reconciliation platfor
 - PostgreSQL + pgvector for storage and vector search
 - Rule-based + embedding-based + LLM-assisted matching
 
+## Reconciliation process (brief)
+
+At a high level, the platform runs as a staged pipeline:
+
+1. Ingest source files using known parsers or LLM-assisted column mapping.
+2. Normalize rows into a canonical transaction model (`TransactionNormalized`) with side `A`/`B` assignment.
+3. Create and run a reconciliation job for a scenario and date range.
+4. Match side `A` to side `B` using deterministic filters, embedding similarity, and optional LLM tie-break.
+5. Persist matched pairs, unmatched exceptions, metrics, and audit logs for analyst review.
+
+Typical analyst loop:
+
+1. Upload files and run reconciliation.
+2. Review matches, exceptions, and metrics in the dashboard.
+3. Request LLM explanations and manually override matches when needed.
+4. Re-run after mapping/rule adjustments.
+
+## Diagrams
+
+### End-to-end flowchart
+
+```mermaid
+flowchart TD
+	A[Source files] --> B{Ingestion path}
+	B -->|Known parser| C[/POST /ingestion/upload/]
+	B -->|LLM-assisted mapping| D[/POST /ingestion/mapping/reconcile/]
+
+	C --> E[TransactionRaw records]
+	D --> E
+	E --> F[NormalizationPipelineService]
+	F --> G[TransactionNormalized records side A and side B]
+
+	G --> H[/POST /reconciliation/jobs/]
+	H --> I[/POST /reconciliation/jobs/job_id/run/]
+	I --> J[Scenario strategy plus HybridMatchingEngine]
+
+	J --> K[Matched pairs]
+	J --> L[Unmatched side A transactions]
+
+	K --> M[Persist Match records]
+	M --> N{score >= 0.85}
+	N -->|Yes| O[auto_accepted true]
+	N -->|No| P[auto_accepted false and manual review]
+
+	L --> Q[Persist ReconciliationException records]
+	O --> R[Job metrics and audit log]
+	P --> R
+	Q --> R
+
+	R --> S[/GET /reconciliation/jobs/job_id/results/]
+	S --> T[Dashboard metrics matches exceptions]
+	T --> U[/POST explain and override endpoints/]
+```
+
+### System architecture
+
+```mermaid
+flowchart LR
+	A[User Browser] --> B[React UI frontend]
+	B --> C[FastAPI routers ingestion and reconciliation]
+	A --> D[FastAPI static UI mount at root]
+
+	C --> E[IngestionService and MappedReconciliationService]
+	E --> F[NormalizationPipelineService]
+
+	C --> G[ReconciliationService]
+	G --> H[Scenario strategies]
+	H --> I[HybridMatchingEngine]
+
+	I --> J[EmbeddingClient]
+	I --> K[LLMClient tie-break]
+	G --> L[LLMClient explain]
+
+	F --> M[(PostgreSQL)]
+	G --> M
+	I --> M
+	M --> N[(pgvector embeddings)]
+```
+
+### Reconciliation job lifecycle
+
+```mermaid
+stateDiagram-v2
+	[*] --> CREATED
+	CREATED --> RUNNING: run_job
+	RUNNING --> COMPLETED: matches and exceptions saved
+	RUNNING --> FAILED: unhandled error
+	COMPLETED --> [*]
+	FAILED --> [*]
+```
+
+### Matching decision flow
+
+```mermaid
+flowchart TD
+	A[Pick one side A transaction] --> B[Build candidate pool]
+	B --> C{Pass currency amount date constraints}
+	C -->|No candidates| D[Create NO_MATCH exception]
+	C -->|Has candidates| E[Score by rules plus embeddings]
+
+	E --> F{Close top scores}
+	F -->|Yes| G[LLM tie-break]
+	F -->|No| H[Select best score]
+
+	G --> I[Create Match]
+	H --> I
+	I --> J[Set auto_accepted if score >= 0.85]
+```
+
 ## Prerequisites
 
 1. Docker Desktop (with Docker Compose V2) installed and running.

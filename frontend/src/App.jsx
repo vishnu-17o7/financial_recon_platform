@@ -70,6 +70,7 @@ export default function App() {
   const [suggestionLoading, setSuggestionLoading] = useState(false);
   const [reconcileLoading, setReconcileLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(PAGE_UPLOAD);
+  const [processingStep, setProcessingStep] = useState("");
 
   const [scenarioType, setScenarioType] = useState("bank_gl");
   const [createdBy, setCreatedBy] = useState("analyst");
@@ -84,6 +85,26 @@ export default function App() {
   const [selectedDiscrepancyId, setSelectedDiscrepancyId] = useState("");
 
   const [toast, setToast] = useState({ message: "", kind: "info" });
+  const [logs, setLogs] = useState([]);
+  const [showLogs, setShowLogs] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => {
+    const saved = localStorage.getItem("darkMode");
+    return saved ? JSON.parse(saved) : false;
+  });
+
+  useEffect(() => {
+    localStorage.setItem("darkMode", JSON.stringify(darkMode));
+    document.documentElement.setAttribute("data-theme", darkMode ? "dark" : "light");
+  }, [darkMode]);
+
+  function addLog(message, type = "info") {
+    const timestamp = new Date().toLocaleTimeString();
+    setLogs(prev => [...prev, { timestamp, message, type }]);
+  }
+
+  function clearLogs() {
+    setLogs([]);
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -157,21 +178,41 @@ export default function App() {
       return;
     }
 
+    clearLogs();
     setSuggestionLoading(true);
+    addLog("Starting column mapping process...", "info");
+    
     try {
+      addLog(`Reading left file: ${leftFile.name} (${(leftFile.size / 1024).toFixed(1)} KB)`, "info");
+      addLog(`Reading right file: ${rightFile.name} (${(rightFile.size / 1024).toFixed(1)} KB)`, "info");
+      addLog("Analyzing column structures...", "info");
+      
+      setProcessingStep("Running AI column mapping...");
+      addLog("Sending request to LLM for column mapping suggestions...", "info");
+      
       const response = await suggestColumnMapping({
         scenarioType,
         leftFile,
         rightFile
       });
 
+      addLog(`Received ${response.suggestions?.length || 0} mapping suggestions from LLM`, "success");
+      
+      const mappedFields = response.suggestions?.filter(s => s.left_column && s.right_column).length || 0;
+      const unmappedFields = response.suggestions?.filter(s => !s.left_column || !s.right_column).length || 0;
+      addLog(`Mapping summary: ${mappedFields} fields mapped, ${unmappedFields} fields unmapped`, "info");
+      
       setMappingData(response);
       setMappingRows(response.suggestions || []);
       setReconResult(null);
       setSelectedDiscrepancyId("");
       setCurrentPage(PAGE_MAPPING);
+      setProcessingStep("");
+      addLog("Column mapping completed successfully!", "success");
       showToast("AI mapping is ready for review", "success");
     } catch (error) {
+      addLog(`Error: ${error.message}`, "error");
+      setProcessingStep("");
       showToast(`Mapping failed: ${error.message}`, "error");
     } finally {
       setSuggestionLoading(false);
@@ -184,8 +225,29 @@ export default function App() {
       return;
     }
 
+    clearLogs();
     setReconcileLoading(true);
+    addLog("Starting reconciliation process...", "info");
+    addLog(`Left source: ${leftLabel}`, "info");
+    addLog(`Right source: ${rightLabel}`, "info");
+    
     try {
+      setProcessingStep("Reading and parsing files...");
+      addLog(`Parsing left file: ${leftFile.name}`, "info");
+      addLog(`Parsing right file: ${rightFile.name}`, "info");
+      await new Promise(r => setTimeout(r, 300));
+      
+      setProcessingStep("Normalizing left file data...");
+      addLog("Normalizing left file data...", "info");
+      await new Promise(r => setTimeout(r, 300));
+      
+      setProcessingStep("Normalizing right file data...");
+      addLog("Normalizing right file data...", "info");
+      await new Promise(r => setTimeout(r, 300));
+      
+      setProcessingStep("Running transaction matching algorithm...");
+      addLog("Running AI-powered transaction matching...", "info");
+      
       const response = await reconcileWithMapping({
         scenarioType,
         createdBy,
@@ -196,10 +258,22 @@ export default function App() {
         mapping: { mappings: mappingRows }
       });
 
+      addLog(`Matching complete: ${response.metrics?.matched_count || 0} matches found`, "success");
+      addLog(`Exceptions: ${response.metrics?.exception_count || 0} unmatched transactions`, "info");
+      
+      setProcessingStep("Detecting discrepancies and building results...");
+      addLog("Analyzing discrepancies...", "info");
+      await new Promise(r => setTimeout(r, 300));
+      
+      const discrepanciesCount = response.discrepancies?.filter(d => d.issues?.length > 0).length || 0;
+      addLog(`Found ${discrepanciesCount} transactions with discrepancies`, discrepanciesCount > 0 ? "warning" : "success");
+      
       setReconResult(response);
       const firstDiscrepancy = response.discrepancies?.[0];
       setSelectedDiscrepancyId(firstDiscrepancy?.match_id || "");
       setCurrentPage(PAGE_RESULTS);
+      setProcessingStep("");
+      addLog("Reconciliation completed successfully!", "success");
 
       if (response.status === "mapping_failed") {
         showToast("Mapping validation failed; review issues in results", "error");
@@ -207,6 +281,8 @@ export default function App() {
         showToast(`Reconciliation complete: ${response.metrics?.matched_count || 0} matches`, "success");
       }
     } catch (error) {
+      addLog(`Error: ${error.message}`, "error");
+      setProcessingStep("");
       showToast(`Reconciliation failed: ${error.message}`, "error");
     } finally {
       setReconcileLoading(false);
@@ -231,7 +307,24 @@ export default function App() {
             <p>AI-powered mapping and discrepancy review</p>
           </div>
         </div>
-        <div className={`health-pill ${connection.ok ? "online" : "offline"}`}>{connection.label}</div>
+        <div className="header-right">
+          <button 
+            type="button" 
+            className="logs-btn" 
+            onClick={() => setShowLogs(true)}
+          >
+            Logs {logs.length > 0 && <span className="logs-count">{logs.length}</span>}
+          </button>
+          <button 
+            type="button" 
+            className="theme-toggle" 
+            onClick={() => setDarkMode(!darkMode)}
+            title={darkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+          >
+            {darkMode ? "[L]" : "[D]"}
+          </button>
+          <div className={`health-pill ${connection.ok ? "online" : "offline"}`}>{connection.label}</div>
+        </div>
       </header>
 
       <nav className="stage-nav" aria-label="Workflow stages">
@@ -269,9 +362,26 @@ export default function App() {
                   <span className="card-title-icon">1</span>
                   <h2>Upload Source Files</h2>
                 </div>
+                <div className="page-actions-inline">
+                  <button 
+                    className="btn btn-primary" 
+                    type="button"
+                    onClick={handleSuggestMapping} 
+                    disabled={suggestionLoading || !leftFile || !rightFile}
+                  >
+                    {suggestionLoading ? (
+                      <>
+                        <span className="loading-spinner"></span>
+                        {processingStep || "Processing..."}
+                      </>
+                    ) : (
+                      "Analyze and Continue"
+                    )}
+                  </button>
+                </div>
               </div>
 
-              <form onSubmit={handleSuggestMapping}>
+              <form>
                 <div className="upload-grid">
                   <div className="form-group">
                     <label>Scenario Type</label>
@@ -345,19 +455,6 @@ export default function App() {
                       </span>
                     </div>
                   </label>
-                </div>
-
-                <div className="page-actions">
-                  <button className="btn btn-primary" type="submit" disabled={suggestionLoading || !leftFile || !rightFile}>
-                    {suggestionLoading ? (
-                      <>
-                        <span className="loading-spinner"></span>
-                        Analyzing...
-                      </>
-                    ) : (
-                      "Analyze and Continue"
-                    )}
-                  </button>
                 </div>
               </form>
             </section>
@@ -711,6 +808,33 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {showLogs && (
+        <div className="logs-overlay" onClick={() => setShowLogs(false)}>
+          <div className="logs-modal" onClick={e => e.stopPropagation()}>
+            <div className="logs-header">
+              <h3>Process Logs</h3>
+              <button type="button" className="logs-close" onClick={() => setShowLogs(false)}>×</button>
+            </div>
+            <div className="logs-content">
+              {logs.length === 0 ? (
+                <div className="logs-empty">No logs yet. Run a process to see logs.</div>
+              ) : (
+                logs.map((log, index) => (
+                  <div key={index} className={`log-entry log-${log.type}`}>
+                    <span className="log-time">{log.timestamp}</span>
+                    <span className="log-message">{log.message}</span>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="logs-footer">
+              <button type="button" className="btn btn-secondary" onClick={clearLogs}>Clear Logs</button>
+              <button type="button" className="btn btn-primary" onClick={() => setShowLogs(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className={`toast ${toast.message ? "show" : ""} ${toast.kind}`}>{toast.message}</div>
     </div>

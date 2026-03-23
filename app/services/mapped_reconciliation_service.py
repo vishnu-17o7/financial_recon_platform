@@ -536,6 +536,45 @@ class MappedReconciliationService:
             return default_value
 
     @staticmethod
+    def _dict_items(value: Any) -> list[dict[str, Any]]:
+        if not isinstance(value, list):
+            return []
+        return [item for item in value if isinstance(item, dict)]
+
+    @classmethod
+    def _normalize_llm_reconciliation_payload(
+        cls, payload: Any
+    ) -> dict[str, list[dict[str, Any]]]:
+        if not isinstance(payload, dict):
+            return {
+                "matches": [],
+                "unmatched_left": [],
+                "unmatched_right": [],
+            }
+
+        return {
+            "matches": cls._dict_items(payload.get("matches")),
+            "unmatched_left": cls._dict_items(payload.get("unmatched_left")),
+            "unmatched_right": cls._dict_items(payload.get("unmatched_right")),
+        }
+
+    @staticmethod
+    def _extract_match_ids(item: dict[str, Any]) -> tuple[str, str]:
+        left_id = str(
+            item.get("left_transaction_id")
+            or item.get("transaction_a_id")
+            or item.get("left_id")
+            or ""
+        ).strip()
+        right_id = str(
+            item.get("right_transaction_id")
+            or item.get("transaction_b_id")
+            or item.get("right_id")
+            or ""
+        ).strip()
+        return left_id, right_id
+
+    @staticmethod
     def _reason_by_transaction(items: Any) -> dict[str, str]:
         if not isinstance(items, list):
             return {}
@@ -597,30 +636,15 @@ class MappedReconciliationService:
                 ],
             )
             llm_response = self.llm_client.complete_json(llm_prompt)
+            parsed_response = self._normalize_llm_reconciliation_payload(llm_response)
 
-            raw_matches = (
-                llm_response.get("matches", [])
-                if isinstance(llm_response, dict)
-                else []
-            )
+            raw_matches = parsed_response["matches"]
             matched_left_ids: set[str] = set()
             matched_right_ids: set[str] = set()
             persisted_matches: list[Match] = []
 
             for item in raw_matches:
-                if not isinstance(item, dict):
-                    continue
-
-                left_id = str(
-                    item.get("left_transaction_id")
-                    or item.get("transaction_a_id")
-                    or ""
-                ).strip()
-                right_id = str(
-                    item.get("right_transaction_id")
-                    or item.get("transaction_b_id")
-                    or ""
-                ).strip()
+                left_id, right_id = self._extract_match_ids(item)
 
                 if not left_id or not right_id:
                     continue
@@ -664,14 +688,10 @@ class MappedReconciliationService:
             unmatched_left_ids = set(side_a_by_id.keys()) - matched_left_ids
             unmatched_right_ids = set(side_b_by_id.keys()) - matched_right_ids
             unmatched_left_reasons = self._reason_by_transaction(
-                llm_response.get("unmatched_left")
-                if isinstance(llm_response, dict)
-                else None
+                parsed_response["unmatched_left"]
             )
             unmatched_right_reasons = self._reason_by_transaction(
-                llm_response.get("unmatched_right")
-                if isinstance(llm_response, dict)
-                else None
+                parsed_response["unmatched_right"]
             )
 
             for txn_id in unmatched_left_ids:

@@ -37,7 +37,7 @@ class NormalizationPipelineService:
                 getattr(
                     self.settings,
                     "llm_normalization_batch_size",
-                    getattr(self.settings, "llm_reconciliation_batch_size", 20),
+                    getattr(self.settings, "llm_reconciliation_batch_size", 100),
                 )
             ),
         )

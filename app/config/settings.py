@@ -18,8 +18,8 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.0
     llm_top_p: float = 0.1
     llm_seed: int = 42
-    llm_reconciliation_batch_size: int = 20
-    llm_normalization_batch_size: int = 20
+    llm_reconciliation_batch_size: int = 100
+    llm_normalization_batch_size: int = 100
     llm_row_enrichment_enabled: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

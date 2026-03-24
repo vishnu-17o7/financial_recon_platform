@@ -70,24 +70,13 @@ def build_column_mapping_prompt(
         "left_preview": left_preview,
         "right_preview": right_preview,
         "supported_fields": supported_fields,
-        "field_descriptions": {
-            "transaction_date": "The date when the transaction occurred (posting date, payment date, value date)",
-            "value_date": "The date when the transaction affects the account (settlement date, value date)",
-            "description": "Free-form text describing the transaction (narration, memo, remarks)",
-            "amount": "The total transaction amount (may be signed or unsigned)",
-            "debit": "The debit/withdrawal amount (positive for debits)",
-            "credit": "The credit/deposit amount (positive for credits)",
-            "currency": "The currency code (INR, USD, EUR, etc.)",
-            "reference": "Unique identifier for the transaction (UTR, voucher number, payment ID)",
-            "counterparty": "The other party in the transaction (vendor, customer, beneficiary name)",
-            "direction": "Flow direction (debit/credit, inflow/outflow, DR/CR)",
-            "external_txn_id": "External transaction ID from source system",
-        },
         "matching_guidelines": [
             "Look for exact or close matches in column names (e.g., 'Transaction Date' = 'txn_date' = 'posting_date')",
             "Check the data values in preview rows to confirm your mapping is correct",
             "If a column name doesn't match but the data pattern does (e.g., dates, amounts), use that as evidence",
             "If a side has separate debit and credit columns, map debit and credit and avoid amount on that side",
+            "Do not force-map a field when evidence is weak; set that side to null",
+            "Map amount only when there is clear amount-like evidence in both name and preview values",
             "Set confidence based on how certain you are: 0.9+ for clear matches, 0.6-0.9 for probable, 0.3-0.6 for uncertain, <0.3 for unlikely",
             "Provide a brief rationale explaining WHY you chose this mapping",
         ],
@@ -226,7 +215,9 @@ def build_column_mapping_prompt(
             "The output must have a top-level key 'mappings' containing an array of mapping objects. "
             "For each supported field, include: field, left_column, right_column, confidence (0-1), and rationale. "
             "If no suitable column is found for a field, set the column to null. "
+            "Never guess a mapping from schema expectations alone; use only column names and preview evidence. "
             "When debit/credit columns exist for a side, prefer mapping debit and credit and leave amount null on that side. "
+            "If an amount-like column is not clearly present on a side, set amount to null for that side. "
             "Use confidence to indicate certainty: 0.9+ = very sure, 0.7-0.9 = probable, 0.5-0.7 = uncertain, <0.5 = unlikely match. "
             "Be strict and concise: rationale must be one short sentence (max 12 words)."
         ),

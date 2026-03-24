@@ -388,7 +388,7 @@ class MappedReconciliationService:
         self.recon_service = ReconciliationService(llm_client=self.llm_client)
         self.llm_reconciliation_batch_size = max(
             1,
-            int(getattr(self.settings, "llm_reconciliation_batch_size", 20)),
+            int(getattr(self.settings, "llm_reconciliation_batch_size", 100)),
         )
         self.llm_reconciliation_side_batch_size = max(
             1,

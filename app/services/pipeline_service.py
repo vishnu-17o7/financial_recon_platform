@@ -2,6 +2,7 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
+from app.config.settings import get_settings
 from app.ingestion.base import BaseParser
 from app.ingestion.parsers.bank_csv_parser import GenericBankCSVParser
 from app.ingestion.parsers.gl_csv_parser import GLExportCSVParser
@@ -9,7 +10,7 @@ from app.ingestion.parsers.psp_csv_parser import PSPPaymentsCSVParser
 from app.llm.interfaces import LLMClient
 from app.models.entities import TransactionNormalized, TransactionRaw
 from app.models.enums import ScenarioType
-from app.services.normalization_service import normalize_record
+from app.services.normalization_service import bulk_enrich_records, normalize_record
 
 
 class ParserRegistry:
@@ -28,7 +29,18 @@ class ParserRegistry:
 
 class NormalizationPipelineService:
     def __init__(self, llm_client: LLMClient | None = None):
+        self.settings = get_settings()
         self.llm_client = llm_client
+        self.llm_batch_size = max(
+            1,
+            int(
+                getattr(
+                    self.settings,
+                    "llm_normalization_batch_size",
+                    getattr(self.settings, "llm_reconciliation_batch_size", 100),
+                )
+            ),
+        )
 
     @staticmethod
     def _infer_side(raw_txn: TransactionRaw) -> str:
@@ -43,6 +55,27 @@ class NormalizationPipelineService:
             .order_by(TransactionRaw.row_number.asc())
             .all()
         )
+
+        enrichment_by_id = bulk_enrich_records(
+            records=[
+                {
+                    "raw_transaction_id": raw.id,
+                    "scenario_type": raw.scenario_type,
+                    "description": (raw.raw_payload or {}).get("description")
+                    or (raw.raw_payload or {}).get("narration"),
+                    "counterparty": (raw.raw_payload or {}).get("counterparty")
+                    or (raw.raw_payload or {}).get("customer_name"),
+                    "reference": (raw.raw_payload or {}).get("reference")
+                    or (raw.raw_payload or {}).get("voucher_no")
+                    or (raw.raw_payload or {}).get("payment_id"),
+                    "invoice_ref": (raw.raw_payload or {}).get("invoice_ref"),
+                }
+                for raw in raw_records
+            ],
+            llm_client=self.llm_client,
+            batch_size=self.llm_batch_size,
+        )
+
         count = 0
         for raw in raw_records:
             norm = normalize_record(
@@ -52,7 +85,8 @@ class NormalizationPipelineService:
                 source_system=raw.source_system,
                 raw_transaction_id=raw.id,
                 side=self._infer_side(raw),
-                llm_client=self.llm_client,
+                llm_client=None,
+                enrichment_override=enrichment_by_id.get(raw.id),
             )
             db.add(TransactionNormalized(**norm.model_dump()))
             count += 1

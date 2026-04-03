@@ -1,0 +1,9 @@
+Txn Dt,Value Dt,Narrative Text,Amt (INR),CCY,UTR Ref,Beneficiary Name,Flow,Source Acc
+2025-03-01,2025-03-01,Receipt INV-2045 from Zenith,150000.00,INR,UTR900111,Zenith Retail,Credit,BANK001
+2025-03-02,2025-03-02,IMPS charge for payout run,35.00,INR,FEE-IMPS-0302,,Debit,BANK001
+2025-03-03,2025-03-03,Interest credit monthly,112.55,INR,INT-0303,,Credit,BANK001
+2025-03-04,2025-03-04,Refund RMA-544 to customer,2999.50,INR,REF-RMA-544,Jane Doe,Debit,BANK001
+2025-03-05,2025-03-05,Card settlement batch 771,84560.00,INR,POS-771,Merchant Aggregator,Credit,BANK001
+2025-03-06,2025-03-06,Vendor payment LOGI-8821,50750.00,INR,UTR900333,LogiTrans LLP,Debit,BANK001
+2025-03-09,2025-03-09,Reversal for failed vendor payout,50750.00,INR,RET-UTR900333,LogiTrans LLP,Credit,BANK001
+2025-03-10,2025-03-10,Manual suspense adjustment,9999.00,INR,ADJ-9999,,Debit,BANK001

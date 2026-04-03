@@ -30,3 +30,8 @@ Thumbs.db
 
 # Local database files (if used)
 *.sqlite3
+
+# Frontend (Bun/Node)
+frontend/node_modules/
+frontend/.vite/
+frontend/.cache/

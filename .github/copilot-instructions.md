@@ -1,0 +1,33 @@
+## Design Context
+
+### Users
+Primary users are accountants and bank-side operations teams handling high-volume reconciliation workflows. They work under audit pressure and time constraints, and need to move from uploaded source data to validated matches and exceptions quickly.
+
+### Brand Personality
+Old-money, precise, impactful.
+
+Voice and tone should feel professional and premium while remaining practical for daily operations. The product should evoke confidence and trust first, with visible rigor in data presentation and workflow clarity.
+
+### Aesthetic Direction
+Data-rich enterprise visual direction with a startup-grade presentation layer.
+
+The interface should feel differentiated instead of template-like: editorial hero messaging, premium layout rhythm, and strong visual hierarchy that still foregrounds operational numbers. Avoid purple and blue gradient motifs. Prefer rich, grounded tones and refined contrast treatment. Light and dark themes should both be supported, since the existing dashboard already supports theme switching.
+
+References: none (original visual language preferred).
+Anti-references: generic SaaS clones.
+
+### Design Principles
+1. Trust Through Precision
+Use exact language, explicit states, and legible data blocks so financial users can verify decisions quickly.
+
+2. Premium but Operational
+Blend startup polish with enterprise practicality: expressive hero storytelling paired with task-oriented information density.
+
+3. Fast Path to Action
+Always provide a clear route from marketing context to execution, especially a prominent path into the live reconciliation dashboard.
+
+4. Distinctive Visual Identity
+Avoid overused gradients and generic palettes; maintain a unique brand tone that feels mature, confident, and memorable.
+
+5. Accessible by Default
+Maintain robust contrast, keyboard-friendly controls, and reduced-motion respect even when strict compliance targets are not explicitly requested.

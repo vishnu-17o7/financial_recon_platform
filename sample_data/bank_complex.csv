@@ -1,0 +1,20 @@
+txn_date,value_date,description,amount,currency,reference,counterparty,dr_cr,account_code
+2025-03-01,2025-03-01,Salary payout - Mar payroll,98000.00,INR,SAL-MAR-2025,,debit,BANK001
+2025-03-01,2025-03-01,Customer receipt INV-2045,150000.00,INR,UTR900111,Zenith Retail,credit,BANK001
+2025-03-02,2025-03-02,ATM cash withdrawal - Branch 3321,7000.00,INR,ATM-3321,,debit,BANK001
+2025-03-02,2025-03-02,"IMPS fee, March batch",35.00,INR,FEE-IMPS-0302,,debit,BANK001
+2025-03-03,2025-03-03,Interest credit savings account,112.55,INR,INT-0303,,credit,BANK001
+2025-03-03,2025-03-03,NEFT from Orbit Tech INV-7781,42500.00,INR,UTR900222,Orbit Tech Pvt Ltd,credit,BANK001
+2025-03-04,2025-03-04,GST payment - March,18650.00,INR,CHLN-GST-03,Government,debit,BANK001
+2025-03-04,2025-03-04,Refund to customer RMA-544,2999.50,INR,REF-RMA-544,Jane Doe,debit,BANK001
+2025-03-05,2025-03-05,Card settlement batch 771,84560.00,INR,POS-771,Merchant Aggregator,credit,BANK001
+2025-03-05,2025-03-05,Chargeback card txn CHB-008,1200.00,INR,CHB-008,Card Network,debit,BANK001
+2025-03-06,2025-03-06,Vendor payment LOGI-8821,50750.00,INR,UTR900333,LogiTrans LLP,debit,BANK001
+2025-03-06,2025-03-07,NEFT from Orbit Tech INV-7781 second hit,42500.00,INR,UTR900224,Orbit Tech Pvt Ltd,credit,BANK001
+2025-03-07,2025-03-07,FX inward remittance from Global Buyer,82990.00,INR,SWIFT-7788,Global Buyer Inc,credit,BANK001
+2025-03-08,2025-03-08,Monthly maintenance fee,590.00,INR,FEE-MAINT-03,,debit,BANK001
+2025-03-09,2025-03-09,NEFT return reversal UTR900333,50750.00,INR,RET-UTR900333,LogiTrans LLP,credit,BANK001
+2025-03-10,2025-03-10,Suspense entry manual adjustment,9999.00,INR,ADJ-9999,,debit,BANK001
+2025-03-11,2025-03-11,UPI collection ORD-5501,1349.99,INR,UPI-5501,Rahul K,credit,BANK001
+2025-03-12,2025-03-12,UPI collection ORD-5502,1349.99,INR,UPI-5502,Rahul K,credit,BANK001
+2025-03-12,2025-03-12,USD wire fee,25.00,USD,WIREFEE-25,,debit,BANK001

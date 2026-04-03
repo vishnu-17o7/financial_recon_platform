@@ -1,0 +1,9 @@
+Posting Dt,Memo/Details,Dr Amt,Cr Amt,Curr,Voucher No,Party Name,Type,Ledger Code
+2025-03-01,Customer receipt INV-2045,0,150005.00,INR,JV-3021,Zenith Retail,CR,BANK001
+2025-03-02,IMPS bank fee March,35.00,0,INR,JV-3004,,DR,BANK001
+2025-03-03,Savings interest income,0,112.55,INR,JV-3005,,CR,BANK001
+2025-03-04,Customer refund RMA-544,3000.00,0,INR,JV-3008,Jane Doe,DR,BANK001
+2025-03-05,Card settlements batch 771,0,84560.00,INR,JV-3009,Merchant Aggregator,CR,BANK001
+2025-03-06,Vendor payment LogiTrans,50750.00,0,INR,JV-3011,LogiTrans LLP,DR,BANK001
+2025-03-09,Reversal of vendor payment UTR900333,0,50750.00,INR,JV-3015,LogiTrans LLP,CR,BANK001
+2025-03-10,Manual suspense adjustment,9900.00,0,INR,JV-3016,,DR,BANK001

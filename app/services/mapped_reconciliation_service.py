@@ -388,12 +388,15 @@ class ColumnMappingService:
     @staticmethod
     def mapping_level_issues(
         mapping_items: list[dict[str, Any]],
+        left_columns: list[str] | None = None,
+        right_columns: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         by_field = {item["field"]: item for item in mapping_items}
 
         issues: list[dict[str, Any]] = []
         for side_key in ("left_column", "right_column"):
             side_name = "left" if side_key == "left_column" else "right"
+            source_columns = left_columns if side_key == "left_column" else right_columns
             if not by_field["transaction_date"].get(side_key):
                 issues.append(
                     {
@@ -406,9 +409,45 @@ class ColumnMappingService:
                 )
 
             has_amount = bool(by_field["amount"].get(side_key))
+            has_debit = bool(by_field["debit"].get(side_key))
+            has_credit = bool(by_field["credit"].get(side_key))
             has_debit_credit = bool(
                 by_field["debit"].get(side_key) or by_field["credit"].get(side_key)
             )
+
+            if has_debit ^ has_credit:
+                has_debit_candidate = False
+                has_credit_candidate = False
+                if source_columns:
+                    has_debit_candidate = (
+                        ColumnMappingService._pick_best_column(
+                            source_columns,
+                            FIELD_ALIASES.get("debit", ["debit"]),
+                        )
+                        is not None
+                    )
+                    has_credit_candidate = (
+                        ColumnMappingService._pick_best_column(
+                            source_columns,
+                            FIELD_ALIASES.get("credit", ["credit"]),
+                        )
+                        is not None
+                    )
+
+                if has_debit_candidate and has_credit_candidate:
+                    issues.append(
+                        {
+                            "scope": "mapping",
+                            "severity": "error",
+                            "side": side_name,
+                            "field": "debit_credit",
+                            "message": (
+                                f"{side_name.capitalize()} file appears to have both debit and credit columns; "
+                                "map both debit and credit or use amount for this side"
+                            ),
+                        }
+                    )
+
             if not has_amount and not has_debit_credit:
                 issues.append(
                     {
@@ -497,11 +536,12 @@ class MappedReconciliationService:
 
         debit_value = mapped_fields.get("debit")
         credit_value = mapped_fields.get("credit")
-        has_debit_credit_values = not ColumnMappingService._is_missing(
-            debit_value
-        ) or not ColumnMappingService._is_missing(credit_value)
+        has_debit_value = not ColumnMappingService._is_missing(debit_value)
+        has_credit_value = not ColumnMappingService._is_missing(credit_value)
         amount_value = (
-            None if has_debit_credit_values else mapped_fields.get("amount")
+            None
+            if has_debit_value and has_credit_value
+            else mapped_fields.get("amount")
         )
 
         normalize_payload = {
@@ -1599,7 +1639,11 @@ class MappedReconciliationService:
         mapping_items = self.mapping_service.normalize_mapping_payload(
             mapping_payload, left_columns, right_columns
         )
-        mapping_issues = self.mapping_service.mapping_level_issues(mapping_items)
+        mapping_issues = self.mapping_service.mapping_level_issues(
+            mapping_items,
+            left_columns=left_columns,
+            right_columns=right_columns,
+        )
         if mapping_issues:
             return {
                 "status": "mapping_failed",

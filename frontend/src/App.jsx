@@ -161,6 +161,10 @@ const TRANSLATIONS = {
     Action: "Accion",
     "Load this run into workspace": "Cargar esta corrida en el espacio de trabajo",
     "Loading...": "Cargando...",
+    "Export Results CSV": "Exportar resultados CSV",
+    "No reconciliation results available to export": "No hay resultados de conciliacion para exportar",
+    "Results exported to {file}": "Resultados exportados a {file}",
+    "Export failed: {error}": "La exportacion fallo: {error}",
     "Connection failed: {error}": "Fallo de conexion: {error}",
     "{side} file type is not supported. Upload CSV or Excel files.": "El archivo de {side} no es compatible. Carga CSV o Excel.",
     "{side} file is empty. Upload a non-empty file.": "El archivo de {side} esta vacio. Carga uno no vacio.",
@@ -450,6 +454,240 @@ function buildReplayMappingData(inputSnapshot) {
       preview_rows: toDisplayArray(rightSnapshot.preview_rows)
     }
   };
+}
+
+function escapeCsvCell(value) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  const serialized =
+    typeof value === "string"
+      ? value
+      : typeof value === "number" || typeof value === "boolean"
+        ? String(value)
+        : JSON.stringify(value);
+
+  const text = String(serialized ?? "");
+  if (/[",\n\r]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+
+  return text;
+}
+
+function rowsToCsv(rows) {
+  const items = toDisplayArray(rows);
+  if (!items.length) {
+    return "section,message\nmeta,No result rows";
+  }
+
+  const headers = [];
+  const headerSet = new Set();
+  items.forEach((row) => {
+    Object.keys(row || {}).forEach((key) => {
+      if (!headerSet.has(key)) {
+        headerSet.add(key);
+        headers.push(key);
+      }
+    });
+  });
+
+  const lines = [headers.map(escapeCsvCell).join(",")];
+  items.forEach((row) => {
+    const line = headers.map((header) => escapeCsvCell(row?.[header])).join(",");
+    lines.push(line);
+  });
+
+  return lines.join("\n");
+}
+
+function triggerCsvDownload(fileName, csvText) {
+  const blob = new Blob(["\uFEFF", csvText], { type: "text/csv;charset=utf-8;" });
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+
+  window.URL.revokeObjectURL(url);
+}
+
+function buildResultExportRows(result, { leftLabel, rightLabel }) {
+  const normalized = normalizeReconciliationResult(result);
+  const rows = [];
+
+  rows.push(
+    {
+      section: "meta",
+      key: "generated_at",
+      value: new Date().toISOString()
+    },
+    {
+      section: "meta",
+      key: "job_id",
+      value: String(normalized?.job_id || "")
+    },
+    {
+      section: "meta",
+      key: "status",
+      value: String(normalized?.status || "")
+    },
+    {
+      section: "meta",
+      key: "left_label",
+      value: String(leftLabel || "")
+    },
+    {
+      section: "meta",
+      key: "right_label",
+      value: String(rightLabel || "")
+    }
+  );
+
+  Object.entries(normalized?.metrics || {}).forEach(([key, value]) => {
+    rows.push({ section: "metrics", key, value });
+  });
+
+  toDisplayArray(normalized.mapping_issues).forEach((issue, index) => {
+    rows.push({
+      section: "mapping_issues",
+      index: index + 1,
+      severity: String(issue?.severity || ""),
+      side: String(issue?.side || ""),
+      field: String(issue?.field || ""),
+      message: String(issue?.message || "")
+    });
+  });
+
+  toDisplayArray(normalized.matches).forEach((match, index) => {
+    rows.push({
+      section: "matches",
+      index: index + 1,
+      match_id: String(match?.id || match?.match_id || ""),
+      left_transaction_id: String(
+        match?.left?.id || match?.a || match?.left_transaction_id || ""
+      ),
+      right_transaction_id: String(
+        match?.right?.id || match?.b || match?.right_transaction_id || ""
+      ),
+      amount_delta: match?.amount_delta ?? "",
+      date_delta_days: match?.date_delta_days ?? "",
+      algorithm: String(match?.algo || ""),
+      confidence: match?.confidence ?? "",
+      status: String(match?.status || "")
+    });
+  });
+
+  toDisplayArray(normalized.discrepancies).forEach((item, index) => {
+    rows.push({
+      section: "discrepancies",
+      index: index + 1,
+      match_id: String(item?.match_id || ""),
+      issues_count: toDisplayArray(item?.issues).length,
+      issues: JSON.stringify(toDisplayArray(item?.issues)),
+      left_snapshot: JSON.stringify(item?.left_snapshot || {}),
+      right_snapshot: JSON.stringify(item?.right_snapshot || {})
+    });
+  });
+
+  toDisplayArray(normalized.exceptions).forEach((exception, index) => {
+    rows.push({
+      section: "exceptions",
+      index: index + 1,
+      exception_id: String(exception?.id || ""),
+      transaction_id: String(
+        exception?.transaction?.transaction_id || exception?.txn || ""
+      ),
+      status: String(exception?.status || ""),
+      reason: String(exception?.reason || ""),
+      recommended_action: String(exception?.recommended_action || "")
+    });
+  });
+
+  toDisplayArray(normalized.classified_exceptions).forEach((entry, index) => {
+    rows.push({
+      section: "classified_exceptions",
+      index: index + 1,
+      exception_id: String(entry?.exception_id || ""),
+      transaction_id: String(entry?.transaction_id || ""),
+      bucket: String(entry?.bucket_label || entry?.bucket_key || ""),
+      operation: String(entry?.operation || ""),
+      amount: entry?.amount ?? "",
+      confidence: entry?.confidence ?? "",
+      rationale: String(entry?.rationale || "")
+    });
+  });
+
+  toDisplayArray(normalized.journal_entries).forEach((entry, index) => {
+    rows.push({
+      section: "journal_entries",
+      index: index + 1,
+      entry_id: String(entry?.entry_id || ""),
+      entry_date: String(entry?.entry_date || ""),
+      debit_account: String(entry?.debit_account || ""),
+      credit_account: String(entry?.credit_account || ""),
+      amount: entry?.amount ?? "",
+      narration: String(entry?.narration || "")
+    });
+  });
+
+  const summary =
+    normalized?.reconciliation_summary && typeof normalized.reconciliation_summary === "object"
+      ? normalized.reconciliation_summary
+      : null;
+  if (summary) {
+    rows.push(
+      {
+        section: "summary_balance",
+        side: "left",
+        label: String(leftLabel || "left"),
+        unadjusted_closing_balance: summary?.bank_statement?.unadjusted_closing_balance ?? "",
+        adjusted_closing_balance: summary?.bank_statement?.adjusted_closing_balance ?? ""
+      },
+      {
+        section: "summary_balance",
+        side: "right",
+        label: String(rightLabel || "right"),
+        unadjusted_closing_balance: summary?.cash_book?.unadjusted_closing_balance ?? "",
+        adjusted_closing_balance: summary?.cash_book?.adjusted_closing_balance ?? ""
+      },
+      {
+        section: "summary_balance",
+        side: "overall",
+        unreconciled_amount: summary?.unreconciled_amount ?? ""
+      }
+    );
+
+    toDisplayArray(summary?.bank_statement?.adjustments).forEach((item, index) => {
+      rows.push({
+        section: "summary_adjustments",
+        index: index + 1,
+        side: "bank_statement",
+        bucket_key: String(item?.bucket_key || ""),
+        label: String(item?.label || ""),
+        operation: String(item?.operation || ""),
+        amount: item?.amount ?? ""
+      });
+    });
+
+    toDisplayArray(summary?.cash_book?.adjustments).forEach((item, index) => {
+      rows.push({
+        section: "summary_adjustments",
+        index: index + 1,
+        side: "cash_book",
+        bucket_key: String(item?.bucket_key || ""),
+        label: String(item?.label || ""),
+        operation: String(item?.operation || ""),
+        amount: item?.amount ?? ""
+      });
+    });
+  }
+
+  return rows;
 }
 
 function ConfidenceBar({ confidence }) {
@@ -860,7 +1098,9 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
       setRightLabel(sanitizedRightLabel);
     }
 
-    const validMappings = mappingRows.filter((row) => row.left_column && row.right_column);
+    const validMappings = mappingRows.filter(
+      (row) => row.left_column || row.right_column
+    );
     if (!validMappings.length) {
       showToast(t("Map at least one left and right column pair before reconciliation"), "error");
       return;
@@ -1233,6 +1473,29 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
       showToast(t("Historical run loaded successfully"), "success");
     } finally {
       setHistoryLoadingId("");
+    }
+  }
+
+  function handleExportResultsCsv() {
+    if (!reconResult) {
+      showToast(t("No reconciliation results available to export"), "error");
+      return;
+    }
+
+    try {
+      const rows = buildResultExportRows(reconResult, { leftLabel, rightLabel });
+      const csvText = rowsToCsv(rows);
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const safeScenario = String(scenarioType || "reconciliation").replace(/[^a-z0-9_-]/gi, "_");
+      const fileName = `${safeScenario}_results_${timestamp}.csv`;
+
+      triggerCsvDownload(fileName, csvText);
+      addLog(t("Results exported to {file}", { file: fileName }), "success");
+      showToast(t("Results exported to {file}", { file: fileName }), "success");
+    } catch (error) {
+      const detail = error?.message || "Unknown error";
+      addLog(t("Export failed: {error}", { error: detail }), "error");
+      showToast(t("Export failed: {error}", { error: detail }), "error");
     }
   }
 
@@ -1750,6 +2013,9 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
                       <button className="btn btn-secondary" type="button" onClick={() => goToPage(PAGE_MAPPING)}>
                         {t("Back to Mapping")}
                       </button>
+                      <button className="btn btn-secondary" type="button" onClick={handleExportResultsCsv}>
+                        {t("Export Results CSV")}
+                      </button>
                       <button className="btn btn-primary" type="button" onClick={() => goToPage(PAGE_RESULTS)}>
                         {t("View Detailed Results")}
                       </button>
@@ -1978,6 +2244,9 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
                         {secondPassLoading
                           ? `${t("Retry Unmatched with LLM")}...`
                           : t("Retry Unmatched with LLM")}
+                      </button>
+                      <button className="btn btn-secondary" type="button" onClick={handleExportResultsCsv}>
+                        {t("Export Results CSV")}
                       </button>
                       <button className="btn btn-secondary" type="button" onClick={() => goToPage(PAGE_SUMMARY)}>
                         {t("Back to Summary")}

@@ -154,11 +154,17 @@ def test_column_mapping_prompt_has_monetary_coverage_guardrails():
 
     guidelines_text = " ".join(payload.get("matching_guidelines", []))
     instruction_text = str(payload.get("instruction", ""))
+    examples_payload = payload.get("examples", {})
 
     assert "at least one of amount/debit/credit" in guidelines_text.lower()
+    assert "cross-side monetary mapping" in guidelines_text.lower()
+    assert "both debit and credit" in guidelines_text.lower()
     assert "monetary exception" in guidelines_text.lower()
     assert "hard constraint" in instruction_text.lower()
+    assert "partial split mapping" in instruction_text.lower()
     assert "never output amount, debit, and credit all null" in instruction_text.lower()
+    assert "example_3" in examples_payload
+    assert "negative_example_1" in examples_payload
 
 
 def test_updated_reconciliation_template_is_supported_by_parser():

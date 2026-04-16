@@ -75,8 +75,11 @@ def build_column_mapping_prompt(
             "Check the data values in preview rows to confirm your mapping is correct",
             "If a column name doesn't match but the data pattern does (e.g., dates, amounts), use that as evidence",
             "Coverage guardrail: for each side, map transaction_date and map at least one of amount/debit/credit when monetary columns exist",
-            "If a side has separate debit and credit columns, map debit and credit and avoid amount on that side",
-            "If amount is null on a side, try debit/credit before leaving all monetary fields null",
+            "Monetary strategy must be complete per side: map amount OR map both debit and credit",
+            "If a side has separate debit and credit columns, map BOTH debit and credit and set amount to null on that side",
+            "Cross-side monetary mapping is valid: one side can map amount while the other side maps debit and credit",
+            "Do not output partial split mapping: debit mapped with credit null, or credit mapped with debit null, when both columns exist",
+            "If split mapping is incomplete for a side, prefer amount on that side when available",
             "Do not force-map non-monetary fields when evidence is weak; set those fields to null",
             "Monetary exception: when a side has monetary candidates, map one of amount/debit/credit even with moderate confidence",
             "Map amount only when there is clear amount-like evidence in both name and preview values",
@@ -203,6 +206,79 @@ def build_column_mapping_prompt(
                     },
                 ],
             },
+            "example_3": {
+                "scenario": "Bank amount vs GL debit/credit",
+                "left_columns": [
+                    "Txn Date",
+                    "Description",
+                    "Amount",
+                    "Ref No",
+                ],
+                "right_columns": [
+                    "posting_date",
+                    "narration",
+                    "debit",
+                    "credit",
+                    "voucher_no",
+                ],
+                "mappings": [
+                    {
+                        "field": "transaction_date",
+                        "left_column": "Txn Date",
+                        "right_column": "posting_date",
+                        "confidence": 0.95,
+                        "rationale": "Date columns align clearly across both files",
+                    },
+                    {
+                        "field": "amount",
+                        "left_column": "Amount",
+                        "right_column": None,
+                        "confidence": 0.9,
+                        "rationale": "Bank side uses single signed amount column",
+                    },
+                    {
+                        "field": "debit",
+                        "left_column": None,
+                        "right_column": "debit",
+                        "confidence": 0.9,
+                        "rationale": "GL side stores outflows in debit column",
+                    },
+                    {
+                        "field": "credit",
+                        "left_column": None,
+                        "right_column": "credit",
+                        "confidence": 0.9,
+                        "rationale": "GL side stores inflows in credit column",
+                    },
+                    {
+                        "field": "reference",
+                        "left_column": "Ref No",
+                        "right_column": "voucher_no",
+                        "confidence": 0.82,
+                        "rationale": "Reference IDs align semantically",
+                    },
+                ],
+            },
+            "negative_example_1": {
+                "scenario": "Partial split mapping is invalid",
+                "wrong_mapping": [
+                    {
+                        "field": "debit",
+                        "left_column": None,
+                        "right_column": "debit",
+                        "confidence": 0.85,
+                        "rationale": "Debit column appears obvious",
+                    },
+                    {
+                        "field": "credit",
+                        "left_column": None,
+                        "right_column": None,
+                        "confidence": 0.2,
+                        "rationale": "Credit uncertain",
+                    },
+                ],
+                "why_wrong": "When both debit and credit columns exist, map both or use amount strategy",
+            },
         },
         "output_contract": {
             "mappings": [
@@ -221,9 +297,11 @@ def build_column_mapping_prompt(
             "For each supported field, include: field, left_column, right_column, confidence (0-1), and rationale. "
             "If no suitable column is found for a field, set the column to null. "
             "Never guess a mapping from schema expectations alone; use only column names and preview evidence. "
-            "When debit/credit columns exist for a side, prefer mapping debit and credit and leave amount null on that side. "
+            "When debit/credit columns exist for a side, map BOTH debit and credit and leave amount null on that side. "
+            "Do not output partial split mapping: debit mapped with credit null, or credit mapped with debit null, when both columns exist. "
+            "Cross-side mapping is valid: one side can use amount while the other side uses debit and credit. "
             "If an amount-like column is not clearly present on a side, set amount to null for that side. "
-            "Before returning, validate each side has a monetary strategy: amount OR debit OR credit, when monetary candidates exist. This is a hard constraint. "
+            "Before returning, validate each side has a complete monetary strategy: amount OR both debit and credit, when monetary candidates exist. This is a hard constraint. "
             "Never output amount, debit, and credit all null for a side if monetary columns are present. "
             "Use confidence to indicate certainty: 0.9+ = very sure, 0.7-0.9 = probable, 0.5-0.7 = uncertain, <0.5 = unlikely match. "
             "Be strict and concise: rationale must be one short sentence (max 12 words)."

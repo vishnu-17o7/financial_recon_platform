@@ -33,6 +33,19 @@ def run_job(job_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.post("/jobs/{job_id}/run_second_pass")
+def run_second_pass(job_id: str, db: Session = Depends(get_db)):
+    try:
+        run_info = service.run_second_pass_on_exceptions(db, job_id)
+        return {
+            "job_id": job_id,
+            "second_pass_stats": run_info.get("second_pass_stats", {}),
+            "results": service.job_results(db, job_id),
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.get("/jobs/{job_id}/results")
 def job_results(job_id: str, db: Session = Depends(get_db)):
     try:

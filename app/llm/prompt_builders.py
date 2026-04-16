@@ -448,6 +448,239 @@ def build_llm_reconciliation_prompt(
     return json.dumps(payload, default=str)
 
 
+def build_second_pass_reconciliation_prompt(
+    scenario_type: str,
+    left_transactions: list[dict[str, Any]],
+    right_transactions: list[dict[str, Any]],
+) -> str:
+    payload = {
+        "task": "llm_reconciliation_second_pass",
+        "scenario_type": scenario_type,
+        "objective": (
+            "You are running a SECOND PASS reconciliation retry for transactions that were previously unmatched. "
+            "This pass is for borderline operational delays in bank processes while still preserving accuracy and one-to-one mapping."
+        ),
+        "matching_rules": [
+            "1. ONE-TO-ONE ONLY: Each left transaction can match at most ONE right transaction, and vice versa.",
+            "2. CURRENCY HARD BLOCK: Never match transactions with different currencies.",
+            "3. DATE DELAY ALLOWANCE: Treat up to 10 days date difference as acceptable when other evidence supports the same business event.",
+            "4. AMOUNT PRIORITY: Amount agreement is primary evidence. Exact is best; small variance may be allowed with explicit justification.",
+            "5. REFERENCE WEAK SIGNAL ONLY: Reference can support confidence but MUST NEVER be the deciding factor.",
+            "6. COUNTERPARTY + DESCRIPTION: Use as contextual support for delayed settlements and posting lag.",
+            "7. CONFIDENCE THRESHOLD: Below 0.65 confidence keep unmatched with clear reason.",
+            "8. NO FORCED MATCHES: If evidence is weak/conflicting, keep unmatched.",
+        ],
+        "when_to_match": [
+            "✓ Amounts align and date difference is <=10 days with supportive counterparty/description context",
+            "✓ Amount aligns and delay pattern is plausible for bank clearing/posting lag",
+            "✓ Multiple supporting signals align; reference may help but cannot decide alone",
+        ],
+        "when_not_to_match": [
+            "✗ Currency mismatch",
+            "✗ Date difference >10 days with no strong corroboration",
+            "✗ Match depends only on reference equality while amount/date/context conflict",
+            "✗ Ambiguous candidate set where confidence remains below threshold",
+        ],
+        "output_contract": {
+            "matches": [
+                {
+                    "left_transaction_id": "string - MUST match an ID from left_transactions",
+                    "right_transaction_id": "string - MUST match an ID from right_transactions",
+                    "confidence": "number between 0 and 1",
+                    "reason": "short concrete justification",
+                    "matching_fields": [
+                        "amount, date, counterparty, description, reference"
+                    ],
+                }
+            ],
+            "unmatched_left": [
+                {
+                    "transaction_id": "string from left_transactions",
+                    "reason": "why no valid right counterpart exists",
+                }
+            ],
+            "unmatched_right": [
+                {
+                    "transaction_id": "string from right_transactions",
+                    "reason": "why no valid left counterpart exists",
+                }
+            ],
+        },
+        "left_transactions": left_transactions,
+        "right_transactions": right_transactions,
+        "instruction": (
+            "IMPORTANT: Return JSON only. No markdown. "
+            "Use exactly these top-level keys: matches, unmatched_left, unmatched_right. "
+            "Each match must reference valid input IDs. "
+            "Keep one-to-one integrity. "
+            "Reference is weak supporting evidence only and cannot be the sole deciding factor. "
+            "For ties, choose deterministically by lexicographically smallest right_transaction_id."
+        ),
+    }
+    return json.dumps(payload, default=str)
+
+
+def build_exception_bucket_classification_prompt(
+    left_label: str,
+    right_label: str,
+    exceptions: list[dict[str, Any]],
+) -> str:
+    payload = {
+        "task": "exception_bucket_classification",
+        "objective": (
+            "Classify unreconciled exceptions into bank reconciliation adjustment buckets. "
+            "Each exception must be assigned to exactly one bucket for downstream adjusted-balance math and journal preparation."
+        ),
+        "source_labels": {
+            "left": left_label,
+            "right": right_label,
+        },
+        "bucket_definitions": [
+            {
+                "bucket_key": "bank_deposits_in_transit",
+                "side": "A",
+                "effect": "add",
+                "description": "Receipts recorded in cash book but not yet reflected in bank statement",
+            },
+            {
+                "bucket_key": "bank_outstanding_cheques",
+                "side": "A",
+                "effect": "deduct",
+                "description": "Payments recorded in cash book but cheque not yet presented in bank statement",
+            },
+            {
+                "bucket_key": "bank_errors",
+                "side": "A",
+                "effect": "variable",
+                "description": "Errors identified in bank statement side",
+            },
+            {
+                "bucket_key": "cash_missing_receipts",
+                "side": "B",
+                "effect": "add",
+                "description": "Receipts present in bank statement but missing in cash book",
+            },
+            {
+                "bucket_key": "cash_interest_received",
+                "side": "B",
+                "effect": "add",
+                "description": "Interest credited by bank but not yet recorded in cash book",
+            },
+            {
+                "bucket_key": "cash_bank_fees",
+                "side": "B",
+                "effect": "deduct",
+                "description": "Bank charges/fees debited by bank and missing in cash book",
+            },
+            {
+                "bucket_key": "cash_bounced_cheques",
+                "side": "B",
+                "effect": "deduct",
+                "description": "Dishonored/bounced cheques requiring cash book deduction",
+            },
+            {
+                "bucket_key": "cash_book_errors",
+                "side": "B",
+                "effect": "variable",
+                "description": "Posting/calculation/classification errors in cash book",
+            },
+            {
+                "bucket_key": "uncategorized",
+                "side": "A|B",
+                "effect": "none",
+                "description": "Insufficient evidence for reliable classification",
+            },
+        ],
+        "classification_rules": [
+            "Use transaction side as a hard guardrail: side A must map to bank_* or uncategorized; side B must map to cash_* or uncategorized.",
+            "Never assign a cash-only bucket to side A or bank-only bucket to side B.",
+            "Prefer keyword+context evidence from description, reason_detail, recommended_action, and reference.",
+            "If evidence is weak or conflicting, choose uncategorized with low confidence.",
+            "Return every input exception exactly once.",
+            "Confidence: >=0.85 clear, 0.65-0.84 probable, <0.65 uncertain.",
+        ],
+        "positive_examples": [
+            {
+                "exception": {
+                    "exception_id": "EX-1",
+                    "transaction_id": "TX-1",
+                    "side": "B",
+                    "description": "interest credited by bank june",
+                    "reason_detail": "Not recorded in cash book",
+                },
+                "classification": {
+                    "exception_id": "EX-1",
+                    "bucket_key": "cash_interest_received",
+                    "confidence": 0.95,
+                    "rationale": "Interest credit on bank side must be added to cash book",
+                },
+            },
+            {
+                "exception": {
+                    "exception_id": "EX-2",
+                    "transaction_id": "TX-2",
+                    "side": "B",
+                    "description": "bank charges monthly fee",
+                    "reason_detail": "Missing in cash book",
+                },
+                "classification": {
+                    "exception_id": "EX-2",
+                    "bucket_key": "cash_bank_fees",
+                    "confidence": 0.93,
+                    "rationale": "Bank fee should reduce cash book adjusted balance",
+                },
+            },
+        ],
+        "negative_examples": [
+            {
+                "exception": {
+                    "exception_id": "EX-3",
+                    "transaction_id": "TX-3",
+                    "side": "A",
+                    "description": "deposit in transit",
+                },
+                "invalid_classification": {
+                    "bucket_key": "cash_missing_receipts",
+                    "reason": "Invalid because side A cannot map to cash_* bucket",
+                },
+            },
+            {
+                "exception": {
+                    "exception_id": "EX-4",
+                    "transaction_id": "TX-4",
+                    "side": "B",
+                    "description": "unclear memo",
+                },
+                "invalid_classification": {
+                    "bucket_key": "cash_bank_fees",
+                    "reason": "Invalid because there is no fee/charge evidence",
+                },
+                "valid_alternative": {
+                    "bucket_key": "uncategorized",
+                },
+            },
+        ],
+        "exceptions": exceptions,
+        "output_contract": {
+            "classified_exceptions": [
+                {
+                    "exception_id": "string from input",
+                    "bucket_key": "one of the allowed bucket keys",
+                    "confidence": "number 0..1",
+                    "rationale": "short concrete reason",
+                }
+            ]
+        },
+        "instruction": (
+            "Return JSON only. No markdown. "
+            "Use top-level key classified_exceptions only. "
+            "Classify each input exception exactly once by exception_id. "
+            "Do not invent exception ids. Keep rationale concise."
+        ),
+    }
+    return json.dumps(payload, default=str)
+
+
 def build_explanation_prompt(context: dict[str, Any], is_exception: bool) -> str:
     mode = "unreconciled exception" if is_exception else "matched item"
     return (

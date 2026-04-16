@@ -37,3 +37,20 @@ def test_mapping_validation_requires_date_and_amount_strategy():
 
     assert any(issue["side"] == "right" and issue["field"] == "transaction_date" for issue in issues)
     assert any(issue["side"] == "right" and issue["field"] == "amount" for issue in issues)
+
+
+def test_mapping_validation_allows_debit_credit_without_amount():
+    issues = ColumnMappingService.mapping_level_issues(
+        [
+            {
+                "field": "transaction_date",
+                "left_column": "txn_date",
+                "right_column": "posting_date",
+            },
+            {"field": "amount", "left_column": None, "right_column": None},
+            {"field": "debit", "left_column": "debit", "right_column": "dr"},
+            {"field": "credit", "left_column": "credit", "right_column": "cr"},
+        ]
+    )
+
+    assert not any(issue["severity"] == "error" for issue in issues)

@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { scenarioOptions } from "./constants/options";
-import { checkHealth, reconcileWithMapping, suggestColumnMapping } from "./services/api";
+import {
+  checkHealth,
+  reconcileWithMapping,
+  runSecondPass,
+  suggestColumnMapping
+} from "./services/api";
 
 const PAGE_UPLOAD = "upload";
 const PAGE_MAPPING = "mapping";
@@ -132,6 +137,10 @@ const TRANSLATIONS = {
     "Mapping validation failed; review issues in results": "La validacion de mapeo fallo; revisa los resultados",
     "Reconciliation complete: {count} matches": "Conciliacion completa: {count} coincidencias",
     "Reconciliation failed: {error}": "La conciliacion fallo: {error}",
+    "Retry Unmatched with LLM": "Reintentar no conciliadas con LLM",
+    "Running second-pass LLM on unmatched exceptions...": "Ejecutando segundo pase LLM en excepciones no conciliadas...",
+    "Second-pass completed: {count} additional matches": "Segundo pase completado: {count} coincidencias adicionales",
+    "Second-pass failed: {error}": "Segundo pase fallido: {error}",
     "Connection failed: {error}": "Fallo de conexion: {error}",
     "{side} file type is not supported. Upload CSV or Excel files.": "El archivo de {side} no es compatible. Carga CSV o Excel.",
     "{side} file is empty. Upload a non-empty file.": "El archivo de {side} esta vacio. Carga uno no vacio.",
@@ -329,6 +338,7 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
 
   const [suggestionLoading, setSuggestionLoading] = useState(false);
   const [reconcileLoading, setReconcileLoading] = useState(false);
+  const [secondPassLoading, setSecondPassLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(PAGE_UPLOAD);
   const [processingStep, setProcessingStep] = useState("");
 
@@ -364,6 +374,7 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
   const t = (text, params = {}) => translate(locale, text, params);
   const formatNumber = (value) => numberFormatter.format(Number(value || 0));
   const formatPercent = (value) => `${decimalFormatter.format(Number(value || 0))}%`;
+  const formatAmount = (value) => decimalFormatter.format(Number(value || 0));
 
   const connectionLabel = connection.checking
     ? t("Checking...")
@@ -704,7 +715,13 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
         mapping_issues: toDisplayArray(response?.mapping_issues),
         matches: toDisplayArray(response?.matches),
         discrepancies: toDisplayArray(response?.discrepancies),
-        exceptions: toDisplayArray(response?.exceptions)
+        exceptions: toDisplayArray(response?.exceptions),
+        classified_exceptions: toDisplayArray(response?.classified_exceptions),
+        journal_entries: toDisplayArray(response?.journal_entries),
+        reconciliation_summary:
+          response?.reconciliation_summary && typeof response.reconciliation_summary === "object"
+            ? response.reconciliation_summary
+            : null
       };
 
       addLog(
@@ -796,6 +813,58 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
     }
   }
 
+  async function handleRunSecondPass() {
+    const jobId = String(reconResult?.job_id || "").trim();
+    if (!jobId) {
+      showToast(t("Second-pass failed: {error}", { error: "Missing job id" }), "error");
+      return;
+    }
+
+    setSecondPassLoading(true);
+    addLog(t("Running second-pass LLM on unmatched exceptions..."), "info");
+
+    try {
+      const response = await runSecondPass(jobId);
+      const resultsPayload = response?.results && typeof response.results === "object"
+        ? response.results
+        : {};
+
+      const updatedResult = {
+        ...(reconResult || {}),
+        ...resultsPayload,
+        matches: toDisplayArray(resultsPayload?.matches),
+        exceptions: toDisplayArray(resultsPayload?.exceptions),
+        second_pass_stats:
+          response?.second_pass_stats || resultsPayload?.metrics?.second_pass_stats || null
+      };
+
+      setReconResult(updatedResult);
+
+      const additionalMatches = Number(
+        response?.second_pass_stats?.second_pass_matches || 0
+      );
+      addLog(
+        t("Second-pass completed: {count} additional matches", {
+          count: formatNumber(additionalMatches)
+        }),
+        additionalMatches > 0 ? "success" : "info"
+      );
+
+      showToast(
+        t("Second-pass completed: {count} additional matches", {
+          count: formatNumber(additionalMatches)
+        }),
+        additionalMatches > 0 ? "success" : "info"
+      );
+    } catch (error) {
+      const detail = error?.message || "Unknown error";
+      addLog(t("Second-pass failed: {error}", { error: detail }), "error");
+      showToast(t("Second-pass failed: {error}", { error: detail }), "error");
+    } finally {
+      setSecondPassLoading(false);
+    }
+  }
+
   const discrepancyList = toDisplayArray(reconResult?.discrepancies);
   const discrepancyByMatchId = useMemo(() => {
     return new Map(
@@ -814,6 +883,14 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
   const mappingIssues = toDisplayArray(reconResult?.mapping_issues);
   const matches = toDisplayArray(reconResult?.matches);
   const exceptions = toDisplayArray(reconResult?.exceptions);
+  const classifiedExceptions = toDisplayArray(reconResult?.classified_exceptions);
+  const journalEntries = toDisplayArray(reconResult?.journal_entries);
+  const reconciliationSummary =
+    reconResult?.reconciliation_summary && typeof reconResult.reconciliation_summary === "object"
+      ? reconResult.reconciliation_summary
+      : null;
+  const bankAdjustments = toDisplayArray(reconciliationSummary?.bank_statement?.adjustments);
+  const cashAdjustments = toDisplayArray(reconciliationSummary?.cash_book?.adjustments);
   const currentStageIndex = Math.max(STAGE_ORDER.indexOf(currentPage), 0);
   const onboardingHintByStage = {
     [PAGE_UPLOAD]: "Upload both sources, confirm labels, then run Analyze and Continue.",
@@ -1296,9 +1373,25 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
                       <span className="card-title-icon">3</span>
                       <h2>{t("Reconciliation Results")}</h2>
                     </div>
-                    <button className="btn btn-secondary" type="button" onClick={() => goToPage(PAGE_MAPPING)}>
-                      {t("Back to Mapping")}
-                    </button>
+                    <div className="header-actions">
+                      <button
+                        className="btn btn-primary"
+                        type="button"
+                        onClick={handleRunSecondPass}
+                        disabled={
+                          secondPassLoading ||
+                          reconcileLoading ||
+                          Number(reconResult.metrics?.exception_count || 0) <= 0
+                        }
+                      >
+                        {secondPassLoading
+                          ? `${t("Retry Unmatched with LLM")}...`
+                          : t("Retry Unmatched with LLM")}
+                      </button>
+                      <button className="btn btn-secondary" type="button" onClick={() => goToPage(PAGE_MAPPING)}>
+                        {t("Back to Mapping")}
+                      </button>
+                    </div>
                   </div>
 
                   {mappingIssues.length > 0 && (
@@ -1343,6 +1436,170 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
                     </div>
                   </div>
 
+                  {reconciliationSummary && (
+                    <div className="table-container reconciliation-summary-container">
+                      <div className="table-header">
+                        <h3>{t("Reconciliation Summary")}</h3>
+                      </div>
+                      <div className="summary-balance-grid">
+                        <div className="summary-balance-card">
+                          <h4>{leftLabel || t("Bank Statement")}</h4>
+                          <div className="summary-balance-row">
+                            <span>{t("Unadjusted Closing Balance")}</span>
+                            <strong>{formatAmount(reconciliationSummary.bank_statement?.unadjusted_closing_balance)}</strong>
+                          </div>
+                          <div className="summary-balance-row">
+                            <span>{t("Adjusted Closing Balance")}</span>
+                            <strong>{formatAmount(reconciliationSummary.bank_statement?.adjusted_closing_balance)}</strong>
+                          </div>
+                        </div>
+                        <div className="summary-balance-card">
+                          <h4>{rightLabel || t("Cash Book")}</h4>
+                          <div className="summary-balance-row">
+                            <span>{t("Unadjusted Closing Balance")}</span>
+                            <strong>{formatAmount(reconciliationSummary.cash_book?.unadjusted_closing_balance)}</strong>
+                          </div>
+                          <div className="summary-balance-row">
+                            <span>{t("Adjusted Closing Balance")}</span>
+                            <strong>{formatAmount(reconciliationSummary.cash_book?.adjusted_closing_balance)}</strong>
+                          </div>
+                        </div>
+                        <div className="summary-balance-card unreconciled-card">
+                          <h4>{t("Unreconciled Amount")}</h4>
+                          <div className="summary-balance-row">
+                            <strong>{formatAmount(reconciliationSummary.unreconciled_amount)}</strong>
+                          </div>
+                          <small>{t("Absolute difference between adjusted balances")}</small>
+                        </div>
+                      </div>
+
+                      <div className="summary-adjustments-grid">
+                        <div className="summary-adjustments-panel">
+                          <h4>{t("Bank Statement Adjustments")}</h4>
+                          <ul>
+                            {bankAdjustments.map((item) => (
+                              <li key={`bank-adjustment-${item.bucket_key}`}>
+                                <span>{String(item.label || item.bucket_key)}</span>
+                                <span>
+                                  {String(item.operation || "none").toUpperCase()} | {formatAmount(item.amount)}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                        <div className="summary-adjustments-panel">
+                          <h4>{t("Cash Book Adjustments")}</h4>
+                          <ul>
+                            {cashAdjustments.map((item) => (
+                              <li key={`cash-adjustment-${item.bucket_key}`}>
+                                <span>{String(item.label || item.bucket_key)}</span>
+                                <span>
+                                  {String(item.operation || "none").toUpperCase()} | {formatAmount(item.amount)}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="table-container">
+                    <div className="table-header">
+                      <h3>{t("Classified Exceptions")}</h3>
+                    </div>
+                    <div className="table-scroll">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>{t("Exception ID")}</th>
+                            <th>{t("Transaction")}</th>
+                            <th>{t("Bucket")}</th>
+                            <th>{t("Operation")}</th>
+                            <th>{t("Amount")}</th>
+                            <th>{t("Confidence")}</th>
+                            <th>{t("Rationale")}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {classifiedExceptions.length ? (
+                            classifiedExceptions.map((entry, index) => (
+                              <tr key={String(entry.exception_id || `classified-${index + 1}`)}>
+                                <td className="cell-ellipsis" title={String(entry.exception_id || "")}> {
+                                  String(entry.exception_id || "")
+                                }</td>
+                                <td className="cell-ellipsis" title={String(entry.transaction_id || "")}> {
+                                  String(entry.transaction_id || "")
+                                }</td>
+                                <td className="cell-ellipsis" title={String(entry.bucket_label || entry.bucket_key || "")}> {
+                                  String(entry.bucket_label || entry.bucket_key || "")
+                                }</td>
+                                <td>{String(entry.operation || "none")}</td>
+                                <td>{formatAmount(entry.amount)}</td>
+                                <td>{formatPercent(Number(entry.confidence || 0) * 100)}</td>
+                                <td className="cell-ellipsis" title={String(entry.rationale || "")}> {
+                                  String(entry.rationale || "")
+                                }</td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={7} className="empty-state">
+                                {t("No classified exceptions available")}
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="table-container">
+                    <div className="table-header">
+                      <h3>{t("Journal Entries")}</h3>
+                    </div>
+                    <div className="table-scroll">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>{t("Entry ID")}</th>
+                            <th>{t("Date")}</th>
+                            <th>{t("Debit")}</th>
+                            <th>{t("Credit")}</th>
+                            <th>{t("Amount")}</th>
+                            <th>{t("Narration")}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {journalEntries.length ? (
+                            journalEntries.map((entry, index) => (
+                              <tr key={String(entry.entry_id || `journal-${index + 1}`)}>
+                                <td>{String(entry.entry_id || "")}</td>
+                                <td>{String(entry.entry_date || "")}</td>
+                                <td className="cell-ellipsis" title={String(entry.debit_account || "")}> {
+                                  String(entry.debit_account || "")
+                                }</td>
+                                <td className="cell-ellipsis" title={String(entry.credit_account || "")}> {
+                                  String(entry.credit_account || "")
+                                }</td>
+                                <td>{formatAmount(entry.amount)}</td>
+                                <td className="cell-ellipsis" title={String(entry.narration || "")}> {
+                                  String(entry.narration || "")
+                                }</td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={6} className="empty-state">
+                                {t("No journal entries generated")}
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
                   <div className="table-container">
                     <div className="table-header">
                       <h3>{t("Matched Transactions")}</h3>
@@ -1356,6 +1613,7 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
                             <th>{t("Right")}</th>
                             <th>{t("Amount Delta")}</th>
                             <th>{t("Date Delta")}</th>
+                            <th>{t("Algorithm")}</th>
                             <th>{t("Status")}</th>
                           </tr>
                         </thead>
@@ -1381,6 +1639,9 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
                                     String(match?.amount_delta || "0.00")
                                   }</td>
                                   <td>{String(match?.date_delta_days ?? 0)}d</td>
+                                  <td className="cell-ellipsis" title={String(match?.algo || "")}>{
+                                    String(match?.algo || "")
+                                  }</td>
                                   <td>
                                     <button
                                       type="button"
@@ -1397,7 +1658,7 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
                             })
                           ) : (
                             <tr>
-                              <td colSpan={6} className="empty-state">
+                              <td colSpan={7} className="empty-state">
                                 {t("No matches found")}
                               </td>
                             </tr>

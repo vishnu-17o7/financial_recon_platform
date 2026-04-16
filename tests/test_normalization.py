@@ -1,5 +1,15 @@
 from app.models.enums import ScenarioType
-from app.services.normalization_service import normalize_record
+from app.services.normalization_service import bulk_enrich_records, normalize_record
+
+
+class SingleObjectBulkLLM:
+    def complete_json(self, _prompt: str):
+        return {
+            "raw_transaction_id": "r1",
+            "normalized_name": "Acme Ltd",
+            "transaction_type": "collection",
+            "reference_numbers": ["UTR123"],
+        }
 
 
 def test_normalize_bank_record_basic():
@@ -24,3 +34,26 @@ def test_normalize_bank_record_basic():
     assert out.side == "A"
     assert out.amount == 12500
     assert out.counterparty_normalized == "acme pvt ltd"
+
+
+def test_bulk_enrichment_accepts_single_object_response():
+    records = [
+        {
+            "raw_transaction_id": "r1",
+            "description": "customer collection",
+            "counterparty": "ACME",
+            "reference": "UTR123",
+            "invoice_ref": None,
+            "scenario_type": ScenarioType.BANK_GL,
+        }
+    ]
+
+    out = bulk_enrich_records(
+        records=records,
+        llm_client=SingleObjectBulkLLM(),
+        batch_size=20,
+    )
+
+    assert out["r1"]["normalized_name"] == "Acme Ltd"
+    assert out["r1"]["transaction_type"] == "collection"
+    assert out["r1"]["reference_numbers"] == ["UTR123"]

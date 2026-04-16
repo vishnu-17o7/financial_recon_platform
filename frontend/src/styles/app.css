@@ -683,6 +683,12 @@ a:focus-visible,
   margin-bottom: 1rem;
 }
 
+.header-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .card-title {
   display: flex;
   align-items: center;
@@ -1347,6 +1353,96 @@ a:focus-visible,
   font-size: 0.93rem;
 }
 
+.reconciliation-summary-container {
+  padding-bottom: 0.15rem;
+}
+
+.summary-balance-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+  padding: 0.75rem 0.85rem 0.2rem;
+}
+
+.summary-balance-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+  padding: 0.7rem;
+}
+
+.summary-balance-card h4 {
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--text-muted);
+  margin-bottom: 0.45rem;
+}
+
+.summary-balance-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.77rem;
+  margin-bottom: 0.32rem;
+}
+
+.summary-balance-row strong {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9rem;
+}
+
+.unreconciled-card {
+  border-color: var(--warn);
+}
+
+.unreconciled-card small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.69rem;
+  margin-top: 0.25rem;
+}
+
+.summary-adjustments-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  padding: 0.5rem 0.85rem 0.85rem;
+}
+
+.summary-adjustments-panel {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-muted);
+  padding: 0.65rem;
+}
+
+.summary-adjustments-panel h4 {
+  font-size: 0.79rem;
+  margin-bottom: 0.45rem;
+}
+
+.summary-adjustments-panel ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.summary-adjustments-panel li {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-solid);
+  padding: 0.42rem 0.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: 0.74rem;
+}
+
 table {
   min-width: 100%;
   border-collapse: collapse;
@@ -1909,6 +2005,14 @@ td.cell-ellipsis {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .summary-balance-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .summary-adjustments-grid {
+    grid-template-columns: 1fr;
+  }
+
   .diff-workbench {
     grid-template-columns: 1fr;
   }
@@ -1970,6 +2074,11 @@ td.cell-ellipsis {
   .card-header {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .header-actions {
+    width: 100%;
+    flex-direction: column;
   }
 
   .btn {

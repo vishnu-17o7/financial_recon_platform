@@ -178,6 +178,96 @@ class MockLLMClient(LLMClient):
                 "model": "mock-column-mapper",
             }
 
+        if "llm_reconciliation_second_pass" in prompt_l:
+            try:
+                payload = json.loads(prompt)
+                left_items = [
+                    item
+                    for item in payload.get("left_transactions", [])
+                    if isinstance(item, dict)
+                ]
+                right_items = [
+                    item
+                    for item in payload.get("right_transactions", [])
+                    if isinstance(item, dict)
+                ]
+            except Exception:
+                left_items = []
+                right_items = []
+
+            used_right_ids: set[str] = set()
+            matches: list[dict[str, Any]] = []
+
+            for left in left_items:
+                left_id = str(left.get("id") or "").strip()
+                if not left_id:
+                    continue
+
+                best_right: dict[str, Any] | None = None
+                best_score = 0.0
+                best_reason = ""
+
+                for right in right_items:
+                    right_id = str(right.get("id") or "").strip()
+                    if not right_id or right_id in used_right_ids:
+                        continue
+                    score, reason = self._score_reconciliation_pair(left, right)
+                    left_date = self._as_date(left.get("transaction_date") or left.get("date"))
+                    right_date = self._as_date(
+                        right.get("transaction_date") or right.get("date")
+                    )
+                    date_bonus = 0.0
+                    if left_date and right_date and abs((left_date - right_date).days) <= 10:
+                        date_bonus = 0.08
+                    score = min(1.0, score + date_bonus)
+                    if score > best_score:
+                        best_score = score
+                        best_right = right
+                        best_reason = reason
+
+                if best_right is None:
+                    continue
+
+                right_id = str(best_right.get("id") or "").strip()
+                if best_score >= 0.65:
+                    used_right_ids.add(right_id)
+                    matches.append(
+                        {
+                            "left_transaction_id": left_id,
+                            "right_transaction_id": right_id,
+                            "confidence": round(best_score, 4),
+                            "reason": f"Second-pass mock match. {best_reason}",
+                            "matching_fields": ["amount", "date", "counterparty", "description"],
+                        }
+                    )
+
+            matched_left_ids = {item["left_transaction_id"] for item in matches}
+            unmatched_left = [
+                {
+                    "transaction_id": str(left.get("id")),
+                    "reason": "No sufficiently confident second-pass candidate found",
+                }
+                for left in left_items
+                if str(left.get("id") or "").strip()
+                and str(left.get("id")) not in matched_left_ids
+            ]
+            unmatched_right = [
+                {
+                    "transaction_id": str(right.get("id")),
+                    "reason": "No sufficiently confident second-pass candidate found",
+                }
+                for right in right_items
+                if str(right.get("id") or "").strip()
+                and str(right.get("id")) not in used_right_ids
+            ]
+
+            return {
+                "matches": matches,
+                "unmatched_left": unmatched_left,
+                "unmatched_right": unmatched_right,
+                "model": "mock-llm-reconciliation-second-pass",
+            }
+
         if "llm_reconciliation" in prompt_l:
             try:
                 payload = json.loads(prompt)
@@ -247,6 +337,87 @@ class MockLLMClient(LLMClient):
                 "unmatched_left": unmatched_left,
                 "unmatched_right": unmatched_right,
                 "model": "mock-llm-reconciliation",
+            }
+
+        if "exception_bucket_classification" in prompt_l:
+            try:
+                payload = json.loads(prompt)
+                exceptions = [
+                    item
+                    for item in payload.get("exceptions", [])
+                    if isinstance(item, dict)
+                ]
+            except Exception:
+                exceptions = []
+
+            classified_exceptions: list[dict[str, Any]] = []
+            for item in exceptions:
+                exception_id = str(item.get("exception_id") or "").strip()
+                if not exception_id:
+                    continue
+
+                side = str(item.get("side") or "").upper()
+                text = " ".join(
+                    [
+                        str(item.get("description") or ""),
+                        str(item.get("reason") or ""),
+                        str(item.get("reason_detail") or ""),
+                        str(item.get("recommended_action") or ""),
+                        str(item.get("reference") or ""),
+                    ]
+                ).lower()
+
+                bucket_key = "uncategorized"
+                confidence = 0.52
+                rationale = "Insufficient explicit evidence for a specific reconciliation bucket"
+
+                if side == "B":
+                    if any(token in text for token in ["interest"]):
+                        bucket_key = "cash_interest_received"
+                        confidence = 0.94
+                        rationale = "Interest keyword indicates cash-book add adjustment"
+                    elif any(token in text for token in ["fee", "charge", "bank fee", "commission"]):
+                        bucket_key = "cash_bank_fees"
+                        confidence = 0.92
+                        rationale = "Fee/charge evidence indicates cash-book deduction"
+                    elif any(token in text for token in ["bounce", "bounced", "dishonour", "dishonor", "return"]):
+                        bucket_key = "cash_bounced_cheques"
+                        confidence = 0.91
+                        rationale = "Bounced cheque terminology indicates cash-book deduction"
+                    elif any(token in text for token in ["missing receipt", "deposit missing", "receipt missing"]):
+                        bucket_key = "cash_missing_receipts"
+                        confidence = 0.89
+                        rationale = "Missing receipt evidence indicates cash-book addition"
+                    elif any(token in text for token in ["error", "correction", "rectify", "posting"]):
+                        bucket_key = "cash_book_errors"
+                        confidence = 0.78
+                        rationale = "Cash-book correction/error evidence suggests cash_book_errors"
+                elif side == "A":
+                    if any(token in text for token in ["deposit in transit", "in transit"]):
+                        bucket_key = "bank_deposits_in_transit"
+                        confidence = 0.91
+                        rationale = "Deposit in transit indicates bank-side addition"
+                    elif any(token in text for token in ["outstanding cheque", "outstanding check", "unpresented"]):
+                        bucket_key = "bank_outstanding_cheques"
+                        confidence = 0.9
+                        rationale = "Outstanding cheque evidence indicates bank-side deduction"
+                    elif any(token in text for token in ["bank error", "statement error", "bank correction"]):
+                        bucket_key = "bank_errors"
+                        confidence = 0.76
+                        rationale = "Bank-side error/correction evidence suggests bank_errors"
+
+                classified_exceptions.append(
+                    {
+                        "exception_id": exception_id,
+                        "bucket_key": bucket_key,
+                        "confidence": confidence,
+                        "rationale": rationale,
+                    }
+                )
+
+            return {
+                "classified_exceptions": classified_exceptions,
+                "model": "mock-exception-classifier",
             }
 
         if "tie-break" in prompt_l or "candidate" in prompt_l:

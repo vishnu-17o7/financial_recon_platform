@@ -14,6 +14,7 @@ from app.llm.interfaces import LLMClient
 from app.llm.mock_clients import MockLLMClient
 from app.llm.openrouter_client import OpenRouterClient
 from app.llm.prompt_builders import (
+    build_exception_bucket_classification_prompt,
     build_column_mapping_prompt,
     build_llm_reconciliation_prompt,
 )
@@ -73,6 +74,65 @@ FIELD_ALIASES: dict[str, list[str]] = {
         "id",
     ],
 }
+
+RECON_BUCKET_SPECS: dict[str, dict[str, Any]] = {
+    "bank_deposits_in_transit": {
+        "label": "Add Deposits In Transit",
+        "summary_side": "bank_statement",
+        "operation": "add",
+        "journal_required": False,
+    },
+    "bank_outstanding_cheques": {
+        "label": "Deduct Outstanding Cheques",
+        "summary_side": "bank_statement",
+        "operation": "deduct",
+        "journal_required": False,
+    },
+    "bank_errors": {
+        "label": "Add/Deduct Bank Errors",
+        "summary_side": "bank_statement",
+        "operation": "variable",
+        "journal_required": False,
+    },
+    "cash_missing_receipts": {
+        "label": "Add Missing Receipts",
+        "summary_side": "cash_book",
+        "operation": "add",
+        "journal_required": True,
+    },
+    "cash_interest_received": {
+        "label": "Add Interest Received",
+        "summary_side": "cash_book",
+        "operation": "add",
+        "journal_required": True,
+    },
+    "cash_bank_fees": {
+        "label": "Deduct Bank Fees",
+        "summary_side": "cash_book",
+        "operation": "deduct",
+        "journal_required": True,
+    },
+    "cash_bounced_cheques": {
+        "label": "Deduct Bounced Cheques",
+        "summary_side": "cash_book",
+        "operation": "deduct",
+        "journal_required": True,
+    },
+    "cash_book_errors": {
+        "label": "Add/Deduct Errors In Cash Book",
+        "summary_side": "cash_book",
+        "operation": "variable",
+        "journal_required": True,
+    },
+    "uncategorized": {
+        "label": "Uncategorized",
+        "summary_side": None,
+        "operation": "none",
+        "journal_required": False,
+    },
+}
+
+BALANCE_COLUMN_HINTS = ["closing balance", "balance", "closing", "bal"]
 
 
 def _get_llm_client() -> LLMClient:
@@ -774,6 +834,362 @@ class MappedReconciliationService:
             )
         return reasons
 
+    @staticmethod
+    def _normalize_exception_bucket_payload(payload: Any) -> list[dict[str, Any]]:
+        if isinstance(payload, dict):
+            items = payload.get("classified_exceptions")
+            if isinstance(items, list):
+                return [item for item in items if isinstance(item, dict)]
+            return []
+        if isinstance(payload, list):
+            return [item for item in payload if isinstance(item, dict)]
+        return []
+
+    @staticmethod
+    def _parse_decimal_like(value: Any) -> Decimal:
+        if value is None:
+            return Decimal("0")
+        if isinstance(value, Decimal):
+            return value
+        if isinstance(value, (int, float)):
+            return Decimal(str(value))
+
+        text = str(value).strip()
+        if not text:
+            return Decimal("0")
+
+        negative = False
+        if text.startswith("(") and text.endswith(")"):
+            negative = True
+            text = text[1:-1]
+
+        text = text.replace(",", "")
+        cleaned = re.sub(r"[^0-9.\-]", "", text)
+        if cleaned in {"", ".", "-", "-."}:
+            return Decimal("0")
+
+        try:
+            parsed = Decimal(cleaned)
+            return -abs(parsed) if negative else parsed
+        except Exception:
+            return Decimal("0")
+
+    @classmethod
+    def _extract_unadjusted_closing_balance(cls, frame: pd.DataFrame) -> Decimal:
+        if frame is None or frame.empty:
+            return Decimal("0")
+
+        candidates: list[str] = []
+        for column in frame.columns:
+            col_text = str(column).strip().lower()
+            if any(hint in col_text for hint in BALANCE_COLUMN_HINTS):
+                candidates.append(str(column))
+
+        for column in candidates:
+            series = frame[column]
+            for idx in range(len(series) - 1, -1, -1):
+                value = series.iloc[idx]
+                if ColumnMappingService._is_missing(value):
+                    continue
+                parsed = cls._parse_decimal_like(value)
+                if parsed != Decimal("0"):
+                    return parsed
+
+        return Decimal("0")
+
+    @staticmethod
+    def _resolve_bucket_operation(
+        default_operation: str,
+        direction: str | None,
+    ) -> str:
+        if default_operation in {"add", "deduct", "none"}:
+            return default_operation
+        if default_operation != "variable":
+            return "none"
+
+        direction_text = str(direction or "").strip().lower()
+        if direction_text in {"in", "credit", "cr", "c"}:
+            return "add"
+        if direction_text in {"out", "debit", "dr", "d"}:
+            return "deduct"
+        return "none"
+
+    @classmethod
+    def _signed_amount(cls, amount: Decimal, operation: str) -> Decimal:
+        if operation == "add":
+            return abs(amount)
+        if operation == "deduct":
+            return -abs(amount)
+        return Decimal("0")
+
+    def _classify_exceptions(
+        self,
+        left_label: str,
+        right_label: str,
+        exceptions: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        if not exceptions:
+            return []
+
+        llm_input: list[dict[str, Any]] = []
+        by_exception_id: dict[str, dict[str, Any]] = {}
+
+        for item in exceptions:
+            exception_id = str(item.get("id") or "").strip()
+            if not exception_id:
+                continue
+            transaction = item.get("transaction") or {}
+            llm_input.append(
+                {
+                    "exception_id": exception_id,
+                    "transaction_id": str(item.get("txn") or ""),
+                    "side": str(transaction.get("side") or ""),
+                    "amount": str(transaction.get("amount") or "0"),
+                    "currency": str(transaction.get("currency") or ""),
+                    "direction": str(transaction.get("direction") or ""),
+                    "reference": str(transaction.get("reference") or ""),
+                    "counterparty": str(transaction.get("counterparty") or ""),
+                    "description": str(transaction.get("description") or ""),
+                    "reason": str(item.get("reason") or ""),
+                    "reason_detail": str(item.get("reason_detail") or ""),
+                    "recommended_action": str(item.get("recommended_action") or ""),
+                }
+            )
+            by_exception_id[exception_id] = item
+
+        prompt = build_exception_bucket_classification_prompt(
+            left_label=left_label,
+            right_label=right_label,
+            exceptions=llm_input,
+        )
+
+        llm_response: Any = None
+        try:
+            llm_response = self.llm_client.complete_json(prompt)
+        except Exception as exc:
+            print("Exception bucket classification LLM call failed.")
+            print("Prompt sent to LLM:")
+            print(prompt)
+            print("LLM output received before failure:")
+            print(llm_response)
+            print(f"Error while parsing exception bucket response: {exc}")
+            llm_response = {}
+
+        llm_by_exception_id: dict[str, dict[str, Any]] = {}
+        for row in self._normalize_exception_bucket_payload(llm_response):
+            exception_id = str(row.get("exception_id") or "").strip()
+            if exception_id:
+                llm_by_exception_id[exception_id] = row
+
+        classified: list[dict[str, Any]] = []
+        for item in llm_input:
+            exception_id = item["exception_id"]
+            original = by_exception_id[exception_id]
+            transaction = original.get("transaction") or {}
+            side = str(transaction.get("side") or "").upper()
+            direction = str(transaction.get("direction") or "")
+            amount = self._parse_decimal_like(transaction.get("amount"))
+
+            llm_item = llm_by_exception_id.get(exception_id, {})
+            bucket_key = str(llm_item.get("bucket_key") or "uncategorized").strip()
+            if bucket_key not in RECON_BUCKET_SPECS:
+                bucket_key = "uncategorized"
+
+            if side == "A" and bucket_key.startswith("cash_"):
+                bucket_key = "uncategorized"
+            if side == "B" and bucket_key.startswith("bank_"):
+                bucket_key = "uncategorized"
+
+            bucket_spec = RECON_BUCKET_SPECS[bucket_key]
+            operation = self._resolve_bucket_operation(
+                str(bucket_spec["operation"]),
+                direction,
+            )
+            signed_amount = self._signed_amount(amount, operation)
+            confidence = self._confidence(llm_item.get("confidence"), default_value=0.0)
+
+            classified.append(
+                {
+                    "exception_id": exception_id,
+                    "transaction_id": str(original.get("txn") or ""),
+                    "side": side,
+                    "bucket_key": bucket_key,
+                    "bucket_label": str(bucket_spec["label"]),
+                    "summary_side": bucket_spec["summary_side"],
+                    "operation": operation,
+                    "amount": str(abs(amount)),
+                    "signed_amount": str(signed_amount),
+                    "direction": direction,
+                    "confidence": confidence,
+                    "rationale": str(
+                        llm_item.get("rationale")
+                        or "No reliable classification evidence from model output"
+                    ),
+                    "journal_required": bool(bucket_spec["journal_required"]),
+                }
+            )
+
+        return classified
+
+    @classmethod
+    def _build_reconciliation_summary(
+        cls,
+        left_df: pd.DataFrame,
+        right_df: pd.DataFrame,
+        classified_exceptions: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        unadjusted_bank = cls._extract_unadjusted_closing_balance(left_df)
+        unadjusted_cash = cls._extract_unadjusted_closing_balance(right_df)
+
+        bucket_totals: dict[str, dict[str, Any]] = {}
+        for key, spec in RECON_BUCKET_SPECS.items():
+            if key == "uncategorized":
+                continue
+            bucket_totals[key] = {
+                "bucket_key": key,
+                "bucket_label": spec["label"],
+                "summary_side": spec["summary_side"],
+                "operation": spec["operation"],
+                "amount_total": Decimal("0"),
+                "signed_total": Decimal("0"),
+                "count": 0,
+            }
+
+        for row in classified_exceptions:
+            bucket_key = str(row.get("bucket_key") or "")
+            if bucket_key not in bucket_totals:
+                continue
+            amount = cls._parse_decimal_like(row.get("amount"))
+            signed_amount = cls._parse_decimal_like(row.get("signed_amount"))
+            bucket_totals[bucket_key]["amount_total"] += abs(amount)
+            bucket_totals[bucket_key]["signed_total"] += signed_amount
+            bucket_totals[bucket_key]["count"] += 1
+
+        bank_adjustments = [
+            {
+                "bucket_key": row["bucket_key"],
+                "label": row["bucket_label"],
+                "operation": cls._resolve_bucket_operation(
+                    str(row["operation"]),
+                    None,
+                ),
+                "amount": str(row["amount_total"]),
+                "count": row["count"],
+                "signed_amount": str(row["signed_total"]),
+            }
+            for row in bucket_totals.values()
+            if row["summary_side"] == "bank_statement"
+        ]
+        cash_adjustments = [
+            {
+                "bucket_key": row["bucket_key"],
+                "label": row["bucket_label"],
+                "operation": cls._resolve_bucket_operation(
+                    str(row["operation"]),
+                    None,
+                ),
+                "amount": str(row["amount_total"]),
+                "count": row["count"],
+                "signed_amount": str(row["signed_total"]),
+            }
+            for row in bucket_totals.values()
+            if row["summary_side"] == "cash_book"
+        ]
+
+        bank_signed_total = sum(
+            (cls._parse_decimal_like(item["signed_amount"]) for item in bank_adjustments),
+            Decimal("0"),
+        )
+        cash_signed_total = sum(
+            (cls._parse_decimal_like(item["signed_amount"]) for item in cash_adjustments),
+            Decimal("0"),
+        )
+
+        adjusted_bank = unadjusted_bank + bank_signed_total
+        adjusted_cash = unadjusted_cash + cash_signed_total
+        unreconciled = abs(adjusted_bank - adjusted_cash)
+
+        return {
+            "bank_statement": {
+                "unadjusted_closing_balance": str(unadjusted_bank),
+                "adjustments": bank_adjustments,
+                "adjusted_closing_balance": str(adjusted_bank),
+            },
+            "cash_book": {
+                "unadjusted_closing_balance": str(unadjusted_cash),
+                "adjustments": cash_adjustments,
+                "adjusted_closing_balance": str(adjusted_cash),
+            },
+            "unreconciled_amount": str(unreconciled),
+            "classification_count": len(classified_exceptions),
+            "calculation_notes": [
+                "Adjusted side balance = unadjusted balance + sum(additions) - sum(deductions)",
+                "Unreconciled amount = absolute difference between adjusted side balances",
+            ],
+        }
+
+    @classmethod
+    def _build_journal_entries(
+        cls,
+        classified_exceptions: list[dict[str, Any]],
+        period_end: date,
+    ) -> list[dict[str, Any]]:
+        account_rules = {
+            "cash_missing_receipts": ("Cash", "Accounts Receivable"),
+            "cash_interest_received": ("Cash", "Interest Income"),
+            "cash_bank_fees": ("Bank Fees Expense", "Cash"),
+            "cash_bounced_cheques": ("Accounts Receivable", "Cash"),
+        }
+
+        entries: list[dict[str, Any]] = []
+        for idx, row in enumerate(classified_exceptions, start=1):
+            if not row.get("journal_required"):
+                continue
+
+            bucket_key = str(row.get("bucket_key") or "")
+            amount = abs(cls._parse_decimal_like(row.get("amount")))
+            if amount <= Decimal("0"):
+                continue
+
+            debit_account = ""
+            credit_account = ""
+            operation = str(row.get("operation") or "none")
+
+            if bucket_key in account_rules:
+                debit_account, credit_account = account_rules[bucket_key]
+            elif bucket_key == "cash_book_errors":
+                if operation == "add":
+                    debit_account, credit_account = (
+                        "Cash",
+                        "Suspense - Cash Book Error",
+                    )
+                elif operation == "deduct":
+                    debit_account, credit_account = (
+                        "Suspense - Cash Book Error",
+                        "Cash",
+                    )
+
+            if not debit_account or not credit_account:
+                continue
+
+            entries.append(
+                {
+                    "entry_id": f"JE-{idx:04d}",
+                    "entry_date": str(period_end),
+                    "bucket_key": bucket_key,
+                    "narration": str(
+                        row.get("rationale")
+                        or "Reconciliation adjustment entry"
+                    ),
+                    "debit_account": debit_account,
+                    "credit_account": credit_account,
+                    "amount": str(amount),
+                    "source_exception_ids": [str(row.get("exception_id") or "")],
+                }
+            )
+
+        return entries
+
     def _run_llm_reconciliation(
         self,
         db: Session,
@@ -1192,6 +1608,9 @@ class MappedReconciliationService:
                 "exceptions": [],
                 "discrepancies": [],
                 "metrics": {},
+                "classified_exceptions": [],
+                "reconciliation_summary": {},
+                "journal_entries": [],
             }
 
         batch_id = str(uuid4())
@@ -1341,6 +1760,9 @@ class MappedReconciliationService:
                 "exceptions": [],
                 "discrepancies": [],
                 "metrics": {},
+                "classified_exceptions": [],
+                "reconciliation_summary": {},
+                "journal_entries": [],
             }
 
         period_start = min(all_dates)
@@ -1388,8 +1810,10 @@ class MappedReconciliationService:
                     "amount": str(txn.amount),
                     "transaction_date": str(txn.transaction_date),
                     "currency": txn.currency,
+                    "direction": txn.direction.value,
                     "reference": txn.reference_number,
                     "counterparty": txn.counterparty_normalized,
+                    "description": txn.description_clean,
                     "mapped_snapshot": (raw.raw_payload or {}).get("mapped_fields", {})
                     if raw
                     else {},
@@ -1403,6 +1827,21 @@ class MappedReconciliationService:
                     "transaction": exception_map.get(exception["txn"]),
                 }
             )
+
+        classified_exceptions = self._classify_exceptions(
+            left_label=left_label,
+            right_label=right_label,
+            exceptions=enriched_exceptions,
+        )
+        reconciliation_summary = self._build_reconciliation_summary(
+            left_df=left_df,
+            right_df=right_df,
+            classified_exceptions=classified_exceptions,
+        )
+        journal_entries = self._build_journal_entries(
+            classified_exceptions=classified_exceptions,
+            period_end=period_end,
+        )
 
         return {
             "status": job.status.value,
@@ -1426,6 +1865,9 @@ class MappedReconciliationService:
             "matches": results.get("matches", []),
             "exceptions": enriched_exceptions,
             "exception_buckets": results.get("exception_buckets", {}),
+            "classified_exceptions": classified_exceptions,
+            "reconciliation_summary": reconciliation_summary,
+            "journal_entries": journal_entries,
             "reconciliation_engine": "llm",
             "discrepancies": self._build_discrepancies(db, job.id),
         }

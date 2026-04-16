@@ -4,7 +4,7 @@ const JSON_HEADERS = {
 
 const DEFAULT_TIMEOUT_MS = 60000;
 const MAPPING_SUGGEST_TIMEOUT_MS = 120000;
-const RECONCILIATION_TIMEOUT_MS = 180000;
+const RECONCILIATION_TIMEOUT_MS = 300000;
 const JOB_RUN_TIMEOUT_MS = 180000;
 
 function getRequestTimeout(path, timeoutMs) {
@@ -23,7 +23,7 @@ function getRequestTimeout(path, timeoutMs) {
   if (
     typeof path === "string" &&
     path.includes("/reconciliation/jobs/") &&
-    path.endsWith("/run")
+    (path.endsWith("/run") || path.endsWith("/run_second_pass"))
   ) {
     return JOB_RUN_TIMEOUT_MS;
   }
@@ -174,6 +174,12 @@ export function createJob(payload) {
 
 export function runJob(jobId) {
   return apiRequest(`/reconciliation/jobs/${encodeURIComponent(jobId)}/run`, {
+    method: "POST"
+  });
+}
+
+export function runSecondPass(jobId) {
+  return apiRequest(`/reconciliation/jobs/${encodeURIComponent(jobId)}/run_second_pass`, {
     method: "POST"
   });
 }

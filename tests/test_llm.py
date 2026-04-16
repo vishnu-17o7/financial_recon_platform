@@ -1,7 +1,11 @@
 import json
 
 from app.llm.mock_clients import MockLLMClient
-from app.llm.prompt_builders import build_llm_reconciliation_prompt
+from app.llm.prompt_builders import (
+    build_exception_bucket_classification_prompt,
+    build_llm_reconciliation_prompt,
+    build_second_pass_reconciliation_prompt,
+)
 from app.services.mapped_reconciliation_service import MappedReconciliationService
 
 
@@ -52,6 +56,39 @@ def test_mock_llm_reconciliation_response_shape():
     assert "unmatched_right" in out
 
 
+def test_mock_llm_second_pass_response_shape():
+    client = MockLLMClient()
+    prompt = json.dumps(
+        {
+            "task": "llm_reconciliation_second_pass",
+            "left_transactions": [
+                {
+                    "id": "left-1",
+                    "transaction_date": "2025-02-21",
+                    "amount": "100.00",
+                    "currency": "INR",
+                    "reference": "ABC123",
+                    "counterparty": "acme",
+                }
+            ],
+            "right_transactions": [
+                {
+                    "id": "right-1",
+                    "transaction_date": "2025-02-28",
+                    "amount": "100.00",
+                    "currency": "INR",
+                    "reference": "XYZ999",
+                    "counterparty": "acme",
+                }
+            ],
+        }
+    )
+    out = client.complete_json(prompt)
+    assert "matches" in out
+    assert "unmatched_left" in out
+    assert "unmatched_right" in out
+
+
 def test_reconciliation_prompt_has_rules_and_examples():
     prompt = build_llm_reconciliation_prompt(
         scenario_type="bank_gl",
@@ -67,6 +104,21 @@ def test_reconciliation_prompt_has_rules_and_examples():
     assert "examples" in payload
     assert any(key.startswith("positive_example") for key in payload["examples"])
     assert any(key.startswith("negative_example") for key in payload["examples"])
+
+
+def test_second_pass_prompt_has_relaxed_delay_and_weak_reference_rules():
+    prompt = build_second_pass_reconciliation_prompt(
+        scenario_type="bank_gl",
+        left_transactions=[],
+        right_transactions=[],
+    )
+    payload = json.loads(prompt)
+
+    assert payload["task"] == "llm_reconciliation_second_pass"
+    rules_text = " ".join(payload.get("matching_rules", []))
+    assert "10 days" in rules_text
+    assert "Reference" in rules_text or "REFERENCE" in rules_text
+    assert "weak" in rules_text.lower()
 
 
 def test_updated_reconciliation_template_is_supported_by_parser():
@@ -126,3 +178,48 @@ def test_reconciliation_parser_handles_non_dict_payload_safely():
         "unmatched_left": [],
         "unmatched_right": [],
     }
+
+
+def test_exception_bucket_prompt_has_strict_contract_and_examples():
+    prompt = build_exception_bucket_classification_prompt(
+        left_label="Bank Statement",
+        right_label="Cash Book",
+        exceptions=[
+            {
+                "exception_id": "EX-1",
+                "transaction_id": "TX-1",
+                "side": "B",
+                "description": "bank charges monthly",
+            }
+        ],
+    )
+    payload = json.loads(prompt)
+
+    assert payload["task"] == "exception_bucket_classification"
+    assert isinstance(payload.get("bucket_definitions"), list)
+    assert len(payload["bucket_definitions"]) > 0
+    assert isinstance(payload.get("positive_examples"), list)
+    assert isinstance(payload.get("negative_examples"), list)
+    assert "output_contract" in payload
+
+
+def test_mock_llm_exception_bucket_classification_shape():
+    client = MockLLMClient()
+    prompt = build_exception_bucket_classification_prompt(
+        left_label="Bank Statement",
+        right_label="Cash Book",
+        exceptions=[
+            {
+                "exception_id": "EX-1",
+                "transaction_id": "TX-1",
+                "side": "B",
+                "amount": "50",
+                "description": "bank charges monthly fee",
+                "reason_detail": "missing in cash book",
+            }
+        ],
+    )
+    out = client.complete_json(prompt)
+    assert "classified_exceptions" in out
+    assert isinstance(out["classified_exceptions"], list)
+    assert out["classified_exceptions"][0]["exception_id"] == "EX-1"

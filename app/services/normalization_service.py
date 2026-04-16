@@ -137,6 +137,19 @@ def _bulk_enrichment_items(response: Any) -> list[dict[str, Any]]:
         if isinstance(value, list):
             return [item for item in value if isinstance(item, dict)]
 
+    # Some providers ignore the bulk contract and return a single enrichment object.
+    # Accept that shape when it carries a transaction id + enrichment fields.
+    has_id = any(
+        response.get(key) is not None
+        for key in ("raw_transaction_id", "transaction_id", "id")
+    )
+    has_enrichment_fields = any(
+        key in response
+        for key in ("normalized_name", "transaction_type", "reference_numbers")
+    )
+    if has_id and has_enrichment_fields:
+        return [response]
+
     return []
 
 

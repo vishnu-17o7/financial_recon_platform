@@ -2,6 +2,7 @@ import json
 
 from app.llm.mock_clients import MockLLMClient
 from app.llm.prompt_builders import (
+    build_column_mapping_prompt,
     build_exception_bucket_classification_prompt,
     build_llm_reconciliation_prompt,
     build_second_pass_reconciliation_prompt,
@@ -119,6 +120,45 @@ def test_second_pass_prompt_has_relaxed_delay_and_weak_reference_rules():
     assert "10 days" in rules_text
     assert "Reference" in rules_text or "REFERENCE" in rules_text
     assert "weak" in rules_text.lower()
+
+
+def test_column_mapping_prompt_has_monetary_coverage_guardrails():
+    prompt = build_column_mapping_prompt(
+        scenario_type="bank_gl",
+        left_columns=["txn_date", "narration", "withdrawal", "deposit"],
+        right_columns=["posting_date", "description", "amount", "utr"],
+        left_preview=[
+            {
+                "txn_date": "2026-04-15",
+                "narration": "NEFT transfer",
+                "withdrawal": "1200.00",
+                "deposit": "0.00",
+            }
+        ],
+        right_preview=[
+            {
+                "posting_date": "2026-04-15",
+                "description": "Bank transfer",
+                "amount": "1200.00",
+                "utr": "UTR123",
+            }
+        ],
+        supported_fields=[
+            {"field": "transaction_date", "label": "Transaction Date", "required": True},
+            {"field": "amount", "label": "Amount", "required": False},
+            {"field": "debit", "label": "Debit", "required": False},
+            {"field": "credit", "label": "Credit", "required": False},
+        ],
+    )
+    payload = json.loads(prompt)
+
+    guidelines_text = " ".join(payload.get("matching_guidelines", []))
+    instruction_text = str(payload.get("instruction", ""))
+
+    assert "at least one of amount/debit/credit" in guidelines_text.lower()
+    assert "monetary exception" in guidelines_text.lower()
+    assert "hard constraint" in instruction_text.lower()
+    assert "never output amount, debit, and credit all null" in instruction_text.lower()
 
 
 def test_updated_reconciliation_template_is_supported_by_parser():

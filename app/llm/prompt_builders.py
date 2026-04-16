@@ -74,9 +74,14 @@ def build_column_mapping_prompt(
             "Look for exact or close matches in column names (e.g., 'Transaction Date' = 'txn_date' = 'posting_date')",
             "Check the data values in preview rows to confirm your mapping is correct",
             "If a column name doesn't match but the data pattern does (e.g., dates, amounts), use that as evidence",
+            "Coverage guardrail: for each side, map transaction_date and map at least one of amount/debit/credit when monetary columns exist",
             "If a side has separate debit and credit columns, map debit and credit and avoid amount on that side",
-            "Do not force-map a field when evidence is weak; set that side to null",
+            "If amount is null on a side, try debit/credit before leaving all monetary fields null",
+            "Do not force-map non-monetary fields when evidence is weak; set those fields to null",
+            "Monetary exception: when a side has monetary candidates, map one of amount/debit/credit even with moderate confidence",
             "Map amount only when there is clear amount-like evidence in both name and preview values",
+            "Monetary aliases include amount, amt, value, total, debit, credit, dr, cr, withdrawal, deposit, paid, received",
+            "Do not leave amount, debit, and credit all null for a side if any monetary candidate exists",
             "Set confidence based on how certain you are: 0.9+ for clear matches, 0.6-0.9 for probable, 0.3-0.6 for uncertain, <0.3 for unlikely",
             "Provide a brief rationale explaining WHY you chose this mapping",
         ],
@@ -218,6 +223,8 @@ def build_column_mapping_prompt(
             "Never guess a mapping from schema expectations alone; use only column names and preview evidence. "
             "When debit/credit columns exist for a side, prefer mapping debit and credit and leave amount null on that side. "
             "If an amount-like column is not clearly present on a side, set amount to null for that side. "
+            "Before returning, validate each side has a monetary strategy: amount OR debit OR credit, when monetary candidates exist. This is a hard constraint. "
+            "Never output amount, debit, and credit all null for a side if monetary columns are present. "
             "Use confidence to indicate certainty: 0.9+ = very sure, 0.7-0.9 = probable, 0.5-0.7 = uncertain, <0.5 = unlikely match. "
             "Be strict and concise: rationale must be one short sentence (max 12 words)."
         ),

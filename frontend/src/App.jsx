@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { scenarioOptions } from "./constants/options";
 import {
   checkHealth,
+  getJobResults,
   reconcileWithMapping,
   runSecondPass,
   suggestColumnMapping
@@ -10,8 +11,9 @@ import {
 
 const PAGE_UPLOAD = "upload";
 const PAGE_MAPPING = "mapping";
+const PAGE_SUMMARY = "summary";
 const PAGE_RESULTS = "results";
-const STAGE_ORDER = [PAGE_UPLOAD, PAGE_MAPPING, PAGE_RESULTS];
+const STAGE_ORDER = [PAGE_UPLOAD, PAGE_MAPPING, PAGE_SUMMARY, PAGE_RESULTS];
 
 const DEFAULT_LOCALE = "en";
 const SUPPORTED_LOCALES = [
@@ -28,6 +30,7 @@ const TOAST_MESSAGE_MAX = 220;
 const STEP_DELAY_MS = 260;
 const RUN_HISTORY_STORAGE_KEY = "recon-run-history";
 const RUN_HISTORY_LIMIT = 120;
+const RUN_HISTORY_SNAPSHOT_LIMIT = 20;
 
 const TRANSLATIONS = {
   es: {
@@ -45,6 +48,7 @@ const TRANSLATIONS = {
     "Workflow stages": "Etapas del flujo",
     Upload: "Carga",
     "Mapping Diff": "Diferencia de mapeo",
+    Summary: "Resumen",
     Results: "Resultados",
     "Upload Source Files": "Cargar archivos de origen",
     "Analyze and Continue": "Analizar y continuar",
@@ -65,6 +69,9 @@ const TRANSLATIONS = {
     "No mapping suggestions were returned.": "No se devolvieron sugerencias de mapeo.",
     "Run mapping from the upload page first.": "Ejecuta primero el mapeo desde la pagina de carga.",
     "Reconciliation Results": "Resultados de conciliacion",
+    "Summary Overview": "Resumen general",
+    "View Detailed Results": "Ver resultados detallados",
+    "Back to Summary": "Volver al resumen",
     "Back to Mapping": "Volver a mapeo",
     "Mapping Issues Detected": "Problemas de mapeo detectados",
     "Left Records": "Registros izquierdos",
@@ -135,12 +142,25 @@ const TRANSLATIONS = {
     "Found {count} transactions with discrepancies": "Se encontraron {count} transacciones con discrepancias",
     "Reconciliation completed successfully!": "Conciliacion completada correctamente",
     "Mapping validation failed; review issues in results": "La validacion de mapeo fallo; revisa los resultados",
+    "Mapping validation failed: {count} issue(s)": "La validacion de mapeo fallo: {count} problema(s)",
+    "Mapping issue ({side}/{field}): {message}": "Problema de mapeo ({side}/{field}): {message}",
     "Reconciliation complete: {count} matches": "Conciliacion completa: {count} coincidencias",
     "Reconciliation failed: {error}": "La conciliacion fallo: {error}",
     "Retry Unmatched with LLM": "Reintentar no conciliadas con LLM",
     "Running second-pass LLM on unmatched exceptions...": "Ejecutando segundo pase LLM en excepciones no conciliadas...",
     "Second-pass completed: {count} additional matches": "Segundo pase completado: {count} coincidencias adicionales",
     "Second-pass failed: {error}": "Segundo pase fallido: {error}",
+    "Load this run and replace the current workspace state?": "¿Cargar esta corrida y reemplazar el estado actual del espacio de trabajo?",
+    "History replay used local snapshot because live results failed: {error}": "La reproduccion uso una instantanea local porque fallaron los resultados en vivo: {error}",
+    "Unable to load this run: {error}": "No se pudo cargar esta corrida: {error}",
+    "This history entry does not have replayable details yet": "Esta entrada de historial aun no tiene detalles reproducibles",
+    "Loaded historical run from {time}": "Corrida historica cargada desde {time}",
+    "Historical run loaded successfully": "Corrida historica cargada correctamente",
+    Load: "Cargar",
+    "Load Run": "Cargar corrida",
+    Action: "Accion",
+    "Load this run into workspace": "Cargar esta corrida en el espacio de trabajo",
+    "Loading...": "Cargando...",
     "Connection failed: {error}": "Fallo de conexion: {error}",
     "{side} file type is not supported. Upload CSV or Excel files.": "El archivo de {side} no es compatible. Carga CSV o Excel.",
     "{side} file is empty. Upload a non-empty file.": "El archivo de {side} esta vacio. Carga uno no vacio.",
@@ -267,6 +287,171 @@ function readRunHistoryFromStorage() {
   }
 }
 
+function normalizeReconciliationResult(response) {
+  const payload = response && typeof response === "object" ? response : {};
+
+  return {
+    ...payload,
+    mapping_issues: toDisplayArray(payload?.mapping_issues),
+    matches: toDisplayArray(payload?.matches),
+    discrepancies: toDisplayArray(payload?.discrepancies),
+    exceptions: toDisplayArray(payload?.exceptions),
+    classified_exceptions: toDisplayArray(payload?.classified_exceptions),
+    journal_entries: toDisplayArray(payload?.journal_entries),
+    reconciliation_summary:
+      payload?.reconciliation_summary && typeof payload.reconciliation_summary === "object"
+        ? payload.reconciliation_summary
+        : null
+  };
+}
+
+function withoutHistorySnapshots(entry) {
+  if (!entry || typeof entry !== "object") {
+    return entry;
+  }
+
+  const { inputSnapshot, resultSnapshot, ...rest } = entry;
+  return rest;
+}
+
+function serializeMappingRows(rows) {
+  return toDisplayArray(rows).map((row) => {
+    const { _rowKey, ...rest } = row || {};
+    return {
+      ...rest,
+      field: String(rest?.field || ""),
+      label: String(rest?.label || rest?.field || ""),
+      left_column: rest?.left_column || null,
+      right_column: rest?.right_column || null,
+      source: rest?.source === "manual" ? "manual" : "ai",
+      confidence: Number.isFinite(Number(rest?.confidence)) ? Number(rest.confidence) : 0,
+      required: Boolean(rest?.required)
+    };
+  });
+}
+
+function toUniqueStrings(values) {
+  return Array.from(
+    new Set(
+      toDisplayArray(values)
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function buildHistoryInputSnapshot({
+  scenarioType,
+  createdBy,
+  leftLabel,
+  rightLabel,
+  leftFile,
+  rightFile,
+  mappingRows,
+  mappingData
+}) {
+  const safeMappingData =
+    mappingData && typeof mappingData === "object"
+      ? {
+          left: {
+            ...(mappingData.left || {}),
+            columns: toDisplayArray(mappingData?.left?.columns),
+            preview_rows: toDisplayArray(mappingData?.left?.preview_rows)
+          },
+          right: {
+            ...(mappingData.right || {}),
+            columns: toDisplayArray(mappingData?.right?.columns),
+            preview_rows: toDisplayArray(mappingData?.right?.preview_rows)
+          }
+        }
+      : null;
+
+  return {
+    scenarioType,
+    createdBy,
+    leftLabel,
+    rightLabel,
+    leftFileName: String(leftFile?.name || ""),
+    rightFileName: String(rightFile?.name || ""),
+    mappingRows: serializeMappingRows(mappingRows),
+    mappingData: safeMappingData
+  };
+}
+
+function buildHistoryResultSnapshot(result) {
+  const normalized = normalizeReconciliationResult(result);
+  return {
+    job_id: String(normalized?.job_id || ""),
+    status: String(normalized?.status || ""),
+    metrics:
+      normalized?.metrics && typeof normalized.metrics === "object"
+        ? normalized.metrics
+        : {},
+    mapping_issues: normalized.mapping_issues,
+    matches: normalized.matches,
+    discrepancies: normalized.discrepancies,
+    exceptions: normalized.exceptions,
+    classified_exceptions: normalized.classified_exceptions,
+    journal_entries: normalized.journal_entries,
+    reconciliation_summary: normalized.reconciliation_summary,
+    exception_buckets:
+      normalized?.exception_buckets && typeof normalized.exception_buckets === "object"
+        ? normalized.exception_buckets
+        : {},
+    left_file:
+      normalized?.left_file && typeof normalized.left_file === "object"
+        ? normalized.left_file
+        : null,
+    right_file:
+      normalized?.right_file && typeof normalized.right_file === "object"
+        ? normalized.right_file
+        : null
+  };
+}
+
+function buildReplayMappingData(inputSnapshot) {
+  if (!inputSnapshot || typeof inputSnapshot !== "object") {
+    return null;
+  }
+
+  const mappingData =
+    inputSnapshot.mappingData && typeof inputSnapshot.mappingData === "object"
+      ? inputSnapshot.mappingData
+      : {};
+  const leftSnapshot =
+    mappingData.left && typeof mappingData.left === "object"
+      ? mappingData.left
+      : {};
+  const rightSnapshot =
+    mappingData.right && typeof mappingData.right === "object"
+      ? mappingData.right
+      : {};
+
+  const mappingRows = serializeMappingRows(inputSnapshot.mappingRows);
+  const inferredLeftColumns = toUniqueStrings(mappingRows.map((row) => row.left_column));
+  const inferredRightColumns = toUniqueStrings(mappingRows.map((row) => row.right_column));
+
+  return {
+    ...mappingData,
+    left: {
+      ...leftSnapshot,
+      file_name: String(leftSnapshot.file_name || inputSnapshot.leftFileName || ""),
+      columns: toDisplayArray(leftSnapshot.columns).length
+        ? toDisplayArray(leftSnapshot.columns)
+        : inferredLeftColumns,
+      preview_rows: toDisplayArray(leftSnapshot.preview_rows)
+    },
+    right: {
+      ...rightSnapshot,
+      file_name: String(rightSnapshot.file_name || inputSnapshot.rightFileName || ""),
+      columns: toDisplayArray(rightSnapshot.columns).length
+        ? toDisplayArray(rightSnapshot.columns)
+        : inferredRightColumns,
+      preview_rows: toDisplayArray(rightSnapshot.preview_rows)
+    }
+  };
+}
+
 function ConfidenceBar({ confidence }) {
   const percent = Math.max(0, Math.min(100, Math.round((Number(confidence) || 0) * 100)));
   let level = "low";
@@ -358,6 +543,7 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
   const [logs, setLogs] = useState([]);
   const [showLogs, setShowLogs] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [historyLoadingId, setHistoryLoadingId] = useState("");
   const [runHistory, setRunHistory] = useState(() => readRunHistoryFromStorage());
   const [showOnboarding, setShowOnboarding] = useState(() => {
     const seen = localStorage.getItem("recon-onboarding-dismissed");
@@ -435,7 +621,13 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
 
   function appendRunHistory(entry) {
     setRunHistory((current) => {
-      const next = [entry, ...current].slice(0, RUN_HISTORY_LIMIT);
+      const bounded = [entry, ...current].slice(0, RUN_HISTORY_LIMIT);
+      const next = bounded.map((item, index) => {
+        if (index < RUN_HISTORY_SNAPSHOT_LIMIT) {
+          return item;
+        }
+        return withoutHistorySnapshots(item);
+      });
       localStorage.setItem(RUN_HISTORY_STORAGE_KEY, JSON.stringify(next));
       return next;
     });
@@ -503,7 +695,7 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
     if (nextPage === PAGE_MAPPING && !mappingData) {
       return;
     }
-    if (nextPage === PAGE_RESULTS && !reconResult) {
+    if ((nextPage === PAGE_SUMMARY || nextPage === PAGE_RESULTS) && !reconResult) {
       return;
     }
     setCurrentPage(nextPage);
@@ -710,52 +902,82 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
         }
       });
 
-      const normalizedResult = {
-        ...response,
-        mapping_issues: toDisplayArray(response?.mapping_issues),
-        matches: toDisplayArray(response?.matches),
-        discrepancies: toDisplayArray(response?.discrepancies),
-        exceptions: toDisplayArray(response?.exceptions),
-        classified_exceptions: toDisplayArray(response?.classified_exceptions),
-        journal_entries: toDisplayArray(response?.journal_entries),
-        reconciliation_summary:
-          response?.reconciliation_summary && typeof response.reconciliation_summary === "object"
-            ? response.reconciliation_summary
-            : null
-      };
+      const normalizedResult = normalizeReconciliationResult(response);
 
-      addLog(
-        t("Matching complete: {count} matches found", {
-          count: formatNumber(normalizedResult.metrics?.matched_count || 0)
-        }),
-        "success"
-      );
-      addLog(
-        t("Exceptions: {count} unmatched transactions", {
-          count: formatNumber(normalizedResult.metrics?.exception_count || 0)
-        }),
-        "info"
-      );
+      const isMappingFailed = normalizedResult.status === "mapping_failed";
 
-      setProcessingStep(t("Detecting discrepancies and building results..."));
-      addLog(t("Analyzing discrepancies..."), "info");
-      await new Promise((resolve) => setTimeout(resolve, STEP_DELAY_MS));
+      let discrepanciesCount = 0;
+      if (!isMappingFailed) {
+        addLog(
+          t("Matching complete: {count} matches found", {
+            count: formatNumber(normalizedResult.metrics?.matched_count || 0)
+          }),
+          "success"
+        );
+        addLog(
+          t("Exceptions: {count} unmatched transactions", {
+            count: formatNumber(normalizedResult.metrics?.exception_count || 0)
+          }),
+          "info"
+        );
 
-      const discrepanciesCount = normalizedResult.discrepancies.filter(
-        (item) => toDisplayArray(item?.issues).length > 0
-      ).length;
-      addLog(
-        t("Found {count} transactions with discrepancies", {
-          count: formatNumber(discrepanciesCount)
-        }),
-        discrepanciesCount > 0 ? "warning" : "success"
-      );
+        setProcessingStep(t("Detecting discrepancies and building results..."));
+        addLog(t("Analyzing discrepancies..."), "info");
+        await new Promise((resolve) => setTimeout(resolve, STEP_DELAY_MS));
+
+        discrepanciesCount = normalizedResult.discrepancies.filter(
+          (item) => toDisplayArray(item?.issues).length > 0
+        ).length;
+        addLog(
+          t("Found {count} transactions with discrepancies", {
+            count: formatNumber(discrepanciesCount)
+          }),
+          discrepanciesCount > 0 ? "warning" : "success"
+        );
+      } else {
+        const issueCount = toDisplayArray(normalizedResult.mapping_issues).length;
+        addLog(
+          t("Mapping validation failed: {count} issue(s)", {
+            count: formatNumber(issueCount)
+          }),
+          "error"
+        );
+        toDisplayArray(normalizedResult.mapping_issues).forEach((issue) => {
+          const side = String(issue?.side || "unknown").toUpperCase();
+          const field = String(issue?.field || "unknown");
+          const message = String(issue?.message || "");
+          addLog(
+            t("Mapping issue ({side}/{field}): {message}", {
+              side,
+              field,
+              message,
+            }),
+            issue?.severity === "warning" ? "warning" : "error"
+          );
+        });
+      }
 
       setReconResult(normalizedResult);
       setSelectedDiscrepancyId(String(normalizedResult.discrepancies[0]?.match_id || ""));
-      setCurrentPage(PAGE_RESULTS);
+      setCurrentPage(isMappingFailed ? PAGE_RESULTS : PAGE_SUMMARY);
       setProcessingStep("");
-      addLog(t("Reconciliation completed successfully!"), "success");
+      addLog(
+        isMappingFailed
+          ? t("Mapping validation failed; review issues in results")
+          : t("Reconciliation completed successfully!"),
+        isMappingFailed ? "error" : "success"
+      );
+
+      const inputSnapshot = buildHistoryInputSnapshot({
+        scenarioType,
+        createdBy: sanitizedCreatedBy,
+        leftLabel: sanitizedLeftLabel,
+        rightLabel: sanitizedRightLabel,
+        leftFile,
+        rightFile,
+        mappingRows,
+        mappingData
+      });
 
       appendRunHistory({
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -766,13 +988,16 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
         rightSource: sanitizedRightLabel,
         leftFileName: String(leftFile?.name || ""),
         rightFileName: String(rightFile?.name || ""),
-        status: normalizedResult.status === "mapping_failed" ? "mapping_failed" : "completed",
+        status: isMappingFailed ? "mapping_failed" : "completed",
         matches: Number(normalizedResult.metrics?.matched_count || 0),
         exceptions: Number(normalizedResult.metrics?.exception_count || 0),
         matchPct: Number(normalizedResult.metrics?.matched_pct || 0),
         discrepancyCount: Number(discrepanciesCount || 0),
         mappingIssueCount: Number(toDisplayArray(normalizedResult.mapping_issues).length || 0),
-        durationMs: Math.max(Date.now() - runStartedAt, 0)
+        durationMs: Math.max(Date.now() - runStartedAt, 0),
+        jobId: String(normalizedResult?.job_id || ""),
+        inputSnapshot,
+        resultSnapshot: buildHistoryResultSnapshot(normalizedResult)
       });
 
       if (normalizedResult.status === "mapping_failed") {
@@ -790,6 +1015,17 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
       addLog(`Error: ${detail}`, "error");
       setProcessingStep("");
       showToast(t("Reconciliation failed: {error}", { error: detail }), "error");
+      const inputSnapshot = buildHistoryInputSnapshot({
+        scenarioType,
+        createdBy: sanitizedCreatedBy,
+        leftLabel: sanitizedLeftLabel,
+        rightLabel: sanitizedRightLabel,
+        leftFile,
+        rightFile,
+        mappingRows,
+        mappingData
+      });
+
       appendRunHistory({
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         timestamp: new Date().toISOString(),
@@ -806,7 +1042,8 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
         matchPct: 0,
         discrepancyCount: 0,
         mappingIssueCount: 0,
-        durationMs: Math.max(Date.now() - runStartedAt, 0)
+        durationMs: Math.max(Date.now() - runStartedAt, 0),
+        inputSnapshot
       });
     } finally {
       setReconcileLoading(false);
@@ -828,14 +1065,13 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
       const resultsPayload = response?.results && typeof response.results === "object"
         ? response.results
         : {};
+      const normalizedResultsPayload = normalizeReconciliationResult(resultsPayload);
 
       const updatedResult = {
-        ...(reconResult || {}),
-        ...resultsPayload,
-        matches: toDisplayArray(resultsPayload?.matches),
-        exceptions: toDisplayArray(resultsPayload?.exceptions),
+        ...normalizeReconciliationResult(reconResult || {}),
+        ...normalizedResultsPayload,
         second_pass_stats:
-          response?.second_pass_stats || resultsPayload?.metrics?.second_pass_stats || null
+          response?.second_pass_stats || normalizedResultsPayload?.metrics?.second_pass_stats || null
       };
 
       setReconResult(updatedResult);
@@ -862,6 +1098,141 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
       showToast(t("Second-pass failed: {error}", { error: detail }), "error");
     } finally {
       setSecondPassLoading(false);
+    }
+  }
+
+  async function handleLoadRunFromHistory(entry) {
+    if (!entry || typeof entry !== "object") {
+      return;
+    }
+
+    const hasActiveState = Boolean(
+      leftFile ||
+      rightFile ||
+      reconResult ||
+      mappingData ||
+      toDisplayArray(mappingRows).length
+    );
+    if (hasActiveState) {
+      const shouldReplace = window.confirm(
+        t("Load this run and replace the current workspace state?")
+      );
+      if (!shouldReplace) {
+        return;
+      }
+    }
+
+    const entryId = String(entry.id || "");
+    const snapshot =
+      entry.inputSnapshot && typeof entry.inputSnapshot === "object"
+        ? entry.inputSnapshot
+        : null;
+    const storedResultSnapshot =
+      entry.resultSnapshot && typeof entry.resultSnapshot === "object"
+        ? entry.resultSnapshot
+        : null;
+
+    setHistoryLoadingId(entryId);
+
+    try {
+      setLeftFile(null);
+      setRightFile(null);
+
+      const scenarioValue = String(
+        snapshot?.scenarioType || entry.scenarioType || scenarioType
+      ).trim();
+      if (scenarioValue) {
+        setScenarioType(scenarioValue);
+      }
+
+      setCreatedBy(
+        normalizeTextInput(
+          snapshot?.createdBy || entry.analyst,
+          "analyst"
+        )
+      );
+      setLeftLabel(
+        normalizeTextInput(
+          snapshot?.leftLabel || entry.leftSource,
+          "Left Source"
+        )
+      );
+      setRightLabel(
+        normalizeTextInput(
+          snapshot?.rightLabel || entry.rightSource,
+          "Right Source"
+        )
+      );
+
+      const replayMappingRows = prepareMappingRows(snapshot?.mappingRows);
+      setMappingRows(replayMappingRows);
+      setMappingData(buildReplayMappingData(snapshot));
+
+      const jobId = String(entry.jobId || storedResultSnapshot?.job_id || "").trim();
+      let replayResult = storedResultSnapshot
+        ? normalizeReconciliationResult(storedResultSnapshot)
+        : null;
+
+      if (jobId) {
+        try {
+          const liveResponse = await getJobResults(jobId);
+          const liveResult = normalizeReconciliationResult(liveResponse);
+          replayResult = normalizeReconciliationResult({
+            ...(replayResult || {}),
+            ...liveResult,
+            mapping_issues: toDisplayArray(liveResult.mapping_issues).length
+              ? liveResult.mapping_issues
+              : toDisplayArray(replayResult?.mapping_issues),
+            discrepancies: toDisplayArray(liveResult.discrepancies).length
+              ? liveResult.discrepancies
+              : toDisplayArray(replayResult?.discrepancies),
+            classified_exceptions: toDisplayArray(liveResult.classified_exceptions).length
+              ? liveResult.classified_exceptions
+              : toDisplayArray(replayResult?.classified_exceptions),
+            journal_entries: toDisplayArray(liveResult.journal_entries).length
+              ? liveResult.journal_entries
+              : toDisplayArray(replayResult?.journal_entries),
+            reconciliation_summary:
+              liveResult.reconciliation_summary ||
+              replayResult?.reconciliation_summary ||
+              null,
+            left_file: liveResult?.left_file || replayResult?.left_file || null,
+            right_file: liveResult?.right_file || replayResult?.right_file || null
+          });
+        } catch (error) {
+          const detail = error?.message || "Unknown error";
+          addLog(
+            t(
+              "History replay used local snapshot because live results failed: {error}",
+              { error: detail }
+            ),
+            "warning"
+          );
+          if (!replayResult) {
+            showToast(t("Unable to load this run: {error}", { error: detail }), "error");
+            return;
+          }
+        }
+      }
+
+      if (!replayResult) {
+        showToast(t("This history entry does not have replayable details yet"), "error");
+        return;
+      }
+
+      setReconResult(replayResult);
+      setSelectedDiscrepancyId(String(replayResult.discrepancies?.[0]?.match_id || ""));
+      setShowHistory(false);
+      setCurrentPage(PAGE_SUMMARY);
+
+      const loadedAt = new Date(entry.timestamp || Date.now()).toLocaleString(locale, {
+        dateStyle: "medium",
+        timeStyle: "short"
+      });
+      addLog(t("Loaded historical run from {time}", { time: loadedAt }), "success");
+      showToast(t("Historical run loaded successfully"), "success");
+    } finally {
+      setHistoryLoadingId("");
     }
   }
 
@@ -895,12 +1266,14 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
   const onboardingHintByStage = {
     [PAGE_UPLOAD]: "Upload both sources, confirm labels, then run Analyze and Continue.",
     [PAGE_MAPPING]: "Accept high-confidence mappings first, then resolve only the conflicted fields.",
+    [PAGE_SUMMARY]: "Review balances, exception buckets, and journal drafts before drilling into details.",
     [PAGE_RESULTS]: "Inspect discrepancies, clear exceptions, and export audit-ready outcomes."
   };
   const onboardingHint = onboardingHintByStage[currentPage] || onboardingHintByStage[PAGE_UPLOAD];
   const stageItems = [
     { key: PAGE_UPLOAD, label: t("Upload"), enabled: true },
     { key: PAGE_MAPPING, label: t("Mapping Diff"), enabled: Boolean(mappingData) },
+    { key: PAGE_SUMMARY, label: t("Summary"), enabled: Boolean(reconResult) },
     { key: PAGE_RESULTS, label: t("Results"), enabled: Boolean(reconResult) }
   ];
   const scenarioLabelByValue = useMemo(() => {
@@ -1364,50 +1737,24 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
             </section>
           )}
 
-          {currentPage === PAGE_RESULTS && (
+          {currentPage === PAGE_SUMMARY && (
             <section className="results-section">
               {reconResult ? (
                 <div className="card page-card">
                   <div className="card-header">
                     <div className="card-title">
                       <span className="card-title-icon">3</span>
-                      <h2>{t("Reconciliation Results")}</h2>
+                      <h2>{t("Summary Overview")}</h2>
                     </div>
                     <div className="header-actions">
-                      <button
-                        className="btn btn-primary"
-                        type="button"
-                        onClick={handleRunSecondPass}
-                        disabled={
-                          secondPassLoading ||
-                          reconcileLoading ||
-                          Number(reconResult.metrics?.exception_count || 0) <= 0
-                        }
-                      >
-                        {secondPassLoading
-                          ? `${t("Retry Unmatched with LLM")}...`
-                          : t("Retry Unmatched with LLM")}
-                      </button>
                       <button className="btn btn-secondary" type="button" onClick={() => goToPage(PAGE_MAPPING)}>
                         {t("Back to Mapping")}
                       </button>
+                      <button className="btn btn-primary" type="button" onClick={() => goToPage(PAGE_RESULTS)}>
+                        {t("View Detailed Results")}
+                      </button>
                     </div>
                   </div>
-
-                  {mappingIssues.length > 0 && (
-                    <div className="issues-banner">
-                      <h3>{t("Mapping Issues Detected")}</h3>
-                      <ul>
-                        {mappingIssues.map((issue, index) => (
-                          <li key={`mapping-issue-${index}`}>
-                            {issue.side ? `${String(issue.side).toUpperCase()} | ` : ""}
-                            {issue.field ? `${issue.field}: ` : ""}
-                            {issue.message}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
 
                   <div className="metrics-grid">
                     <div className="metric-card">
@@ -1597,6 +1944,89 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
                           )}
                         </tbody>
                       </table>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="card page-card">
+                  <div className="empty-state">{t("Run reconciliation from the mapping page first.")}</div>
+                </div>
+              )}
+            </section>
+          )}
+
+          {currentPage === PAGE_RESULTS && (
+            <section className="results-section">
+              {reconResult ? (
+                <div className="card page-card">
+                  <div className="card-header">
+                    <div className="card-title">
+                      <span className="card-title-icon">4</span>
+                      <h2>{t("Reconciliation Results")}</h2>
+                    </div>
+                    <div className="header-actions">
+                      <button
+                        className="btn btn-primary"
+                        type="button"
+                        onClick={handleRunSecondPass}
+                        disabled={
+                          secondPassLoading ||
+                          reconcileLoading ||
+                          Number(reconResult.metrics?.exception_count || 0) <= 0
+                        }
+                      >
+                        {secondPassLoading
+                          ? `${t("Retry Unmatched with LLM")}...`
+                          : t("Retry Unmatched with LLM")}
+                      </button>
+                      <button className="btn btn-secondary" type="button" onClick={() => goToPage(PAGE_SUMMARY)}>
+                        {t("Back to Summary")}
+                      </button>
+                      <button className="btn btn-secondary" type="button" onClick={() => goToPage(PAGE_MAPPING)}>
+                        {t("Back to Mapping")}
+                      </button>
+                    </div>
+                  </div>
+
+                  {mappingIssues.length > 0 && (
+                    <div className="issues-banner">
+                      <h3>{t("Mapping Issues Detected")}</h3>
+                      <ul>
+                        {mappingIssues.map((issue, index) => (
+                          <li key={`mapping-issue-${index}`}>
+                            {issue.side ? `${String(issue.side).toUpperCase()} | ` : ""}
+                            {issue.field ? `${issue.field}: ` : ""}
+                            {issue.message}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div className="metrics-grid">
+                    <div className="metric-card">
+                      <div className="metric-card-label">{t("Left Records")}</div>
+                      <div className="metric-card-value">{formatNumber(reconResult.left_file?.valid_rows ?? 0)}</div>
+                    </div>
+                    <div className="metric-card">
+                      <div className="metric-card-label">{t("Right Records")}</div>
+                      <div className="metric-card-value">{formatNumber(reconResult.right_file?.valid_rows ?? 0)}</div>
+                    </div>
+                    <div className="metric-card">
+                      <div className="metric-card-label">{t("Matches")}</div>
+                      <div className="metric-card-value success">
+                        {formatNumber(reconResult.metrics?.matched_count ?? 0)}
+                      </div>
+                    </div>
+                    <div className="metric-card">
+                      <div className="metric-card-label">{t("Exceptions")}</div>
+                      <div className="metric-card-value warning">
+                        {formatNumber(reconResult.metrics?.exception_count ?? 0)}
+                      </div>
+                    </div>
+                    <div className="metric-card">
+                      <div className="metric-card-label">{t("Match Rate")}</div>
+                      <div className="metric-card-value">{formatPercent(reconResult.metrics?.matched_pct ?? 0)}</div>
                     </div>
                   </div>
 
@@ -1902,6 +2332,7 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
                         <th>Exceptions</th>
                         <th>Match Rate</th>
                         <th>Duration</th>
+                        <th>{t("Action")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1910,6 +2341,8 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
                           dateStyle: "medium",
                           timeStyle: "short"
                         });
+                        const isLoading = historyLoadingId === String(entry.id || "");
+                        const canLoadEntry = Boolean(entry.jobId || entry.resultSnapshot);
 
                         return (
                           <tr key={entry.id}>
@@ -1933,6 +2366,17 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
                             <td>{formatNumber(entry.exceptions || 0)}</td>
                             <td>{formatPercent(entry.matchPct || 0)}</td>
                             <td>{decimalFormatter.format(Number(entry.durationMs || 0) / 1000)}s</td>
+                            <td className="history-action-cell">
+                              <button
+                                type="button"
+                                className="btn btn-secondary history-load-btn"
+                                title={t("Load this run into workspace")}
+                                onClick={() => handleLoadRunFromHistory(entry)}
+                                disabled={Boolean(historyLoadingId) || !canLoadEntry}
+                              >
+                                {isLoading ? t("Loading...") : t("Load")}
+                              </button>
+                            </td>
                           </tr>
                         );
                       })}

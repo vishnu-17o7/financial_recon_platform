@@ -2003,7 +2003,7 @@ export default function App({ darkMode = false, onToggleDarkMode = () => {}, onN
           {currentPage === PAGE_SUMMARY && (
             <section className="results-section">
               {reconResult ? (
-                <div className="card page-card">
+                <div className="card page-card summary-page-card">
                   <div className="card-header">
                     <div className="card-title">
                       <span className="card-title-icon">3</span>

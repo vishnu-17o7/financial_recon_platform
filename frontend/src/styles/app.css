@@ -984,6 +984,7 @@ a:focus-visible,
   overflow: auto;
   max-width: 100%;
   scrollbar-gutter: stable both-edges;
+  width: 100%;
 }
 
 .file-preview-table-wrap {
@@ -1339,6 +1340,7 @@ a:focus-visible,
   overflow: hidden;
   margin-bottom: 1rem;
   background: var(--surface-solid);
+  max-width: 100%;
 }
 
 .table-header {
@@ -1369,6 +1371,7 @@ a:focus-visible,
   border-radius: 12px;
   background: var(--surface-2);
   padding: 0.7rem;
+  min-width: 0;
 }
 
 .summary-balance-card h4 {
@@ -1383,14 +1386,23 @@ a:focus-visible,
   display: flex;
   justify-content: space-between;
   align-items: baseline;
+  flex-wrap: wrap;
   gap: 0.5rem;
   font-size: 0.77rem;
   margin-bottom: 0.32rem;
 }
 
+.summary-balance-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .summary-balance-row strong {
   font-variant-numeric: tabular-nums;
   font-size: 0.9rem;
+  margin-left: auto;
+  text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .unreconciled-card {
@@ -1416,6 +1428,7 @@ a:focus-visible,
   border-radius: 12px;
   background: var(--surface-muted);
   padding: 0.65rem;
+  min-width: 0;
 }
 
 .summary-adjustments-panel h4 {
@@ -1438,9 +1451,81 @@ a:focus-visible,
   padding: 0.42rem 0.5rem;
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: flex-start;
+  flex-wrap: wrap;
   gap: 0.4rem;
   font-size: 0.74rem;
+}
+
+.summary-adjustments-panel li span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.summary-adjustments-panel li span:last-child {
+  margin-left: auto;
+  text-align: right;
+}
+
+.summary-page-card {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.summary-page-card .card-header {
+  flex-wrap: wrap;
+}
+
+.summary-page-card .card-title {
+  min-width: 0;
+}
+
+.summary-page-card .header-actions {
+  min-width: 0;
+  margin-left: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.summary-page-card .header-actions .btn {
+  max-width: 100%;
+}
+
+.summary-page-card .metrics-grid {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.summary-page-card .summary-balance-grid {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.summary-page-card .summary-adjustments-grid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.summary-page-card .table-container,
+.summary-page-card .table-scroll {
+  max-width: 100%;
+}
+
+.summary-page-card .table-container {
+  min-width: 0;
+}
+
+.summary-page-card .table-scroll {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.summary-page-card .table-scroll table {
+  width: max(100%, 980px);
+  min-width: 980px;
+  table-layout: fixed;
+}
+
+.summary-page-card .header-actions .btn {
+  white-space: normal;
 }
 
 table {
@@ -2077,6 +2162,34 @@ td.cell-ellipsis {
   .page-actions-inline {
     width: 100%;
   }
+
+  .summary-page-card .card-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .summary-page-card .header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .summary-page-card .header-actions .btn {
+    flex: 1 1 12rem;
+    justify-content: center;
+  }
+
+  .summary-page-card .metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .summary-balance-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .summary-adjustments-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 680px) {
@@ -2119,6 +2232,32 @@ td.cell-ellipsis {
     right: 0.6rem;
     bottom: 0.6rem;
     max-width: none;
+  }
+
+  .app-container {
+    width: calc(100% - 0.5rem);
+  }
+
+  .summary-page-card .card {
+    padding: 0.6rem;
+  }
+
+  .summary-balance-card {
+    padding: 0.5rem;
+  }
+
+  .summary-adjustments-panel {
+    padding: 0.5rem;
+  }
+
+  th,
+  td {
+    padding: 0.4rem 0.5rem;
+    font-size: 0.7rem;
+  }
+
+  th {
+    font-size: 0.6rem;
   }
 }
 
@@ -3688,6 +3827,7 @@ td.cell-ellipsis {
   animation: arch-step-enter var(--motion-slow) var(--ease-out-quint);
   transform-origin: top center;
   will-change: transform, opacity;
+  min-width: 0;
 }
 
 .archival-dashboard.is-transitioning .arch-step-view {
@@ -3918,6 +4058,11 @@ td.cell-ellipsis {
     min-width: 4.9rem;
     padding: 0.32rem 0.42rem;
     font-size: 0.62rem;
+  }
+
+  .summary-page-card .table-scroll table {
+    width: max(100%, 720px);
+    min-width: 720px;
   }
 }
 
